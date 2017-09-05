@@ -4,6 +4,7 @@ import weakref
 import new
 import time
 import types
+import numpy
 import gevent
 import gevent.event
 
@@ -63,7 +64,11 @@ class TangoCommand(CommandObject):
 
     def abort(self):
         pass
-        
+
+    def setDeviceTimeout(self, timeout):
+        if self.device is None:
+            self.init_device()
+            self.device.set_timeout_millis(timeout)
 
     def isConnected(self):
         return self.device is not None
@@ -228,8 +233,9 @@ class TangoChannel(ChannelObject):
 
  
     def update(self, value = Poller.NotInitializedValue):
-        if value == Poller.NotInitializedValue:
+        if not isinstance(value, numpy.ndarray)and value == Poller.NotInitializedValue:
             value = self.getValue()
+
         if type(value) == types.TupleType:
           value = list(value)
 
