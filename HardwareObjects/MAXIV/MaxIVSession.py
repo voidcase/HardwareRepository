@@ -39,10 +39,11 @@ class MaxIVSession(Session):
         # missing industrial users and visit info
         # now it is a new visit everyday
         directory = os.path.join(self.base_directory,
-                                 user_category,
+                                 user_category,  # 'staff','visitors', 'proprietary'
                                  self.beamline_name,
                                  self.get_proposal(),
                                  start_time)
 
         logging.getLogger("HWR").info("[MAX IV Session] Data directory for proposal %s: %s" % (self.get_proposal(), directory))
+
         return directory
