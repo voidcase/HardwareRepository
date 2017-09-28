@@ -5,6 +5,7 @@ Adapting from original Session.py to adapt the names of data directories
 """
 import os
 import time
+import logging
 
 from Session import Session
 
@@ -34,13 +35,14 @@ class MaxIVSession(Session):
         if self.is_inhouse():
             user_category = 'staff'
         else:
-            user_category = 'visitor'
+            user_category = 'visitors'
         # missing industrial users and visit info
         # now it is a new visit everyday
         directory = os.path.join(self.base_directory,
-                                 'staff',#'visitors', #'staff',#user_category,
+                                 user_category,
                                  self.beamline_name,
-                                 'commissioning',#'20170034',#'commissioning',#self.get_proposal(),
+                                 self.get_proposal(),
                                  start_time)
 
+        logging.getLogger("HWR").info("[MAX IV Session] Data directory for proposal %s: %s" % (self.get_proposal(), directory))
         return directory
