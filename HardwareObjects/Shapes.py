@@ -152,6 +152,9 @@ class Shapes(HardwareObject):
         Clear the shapes, remove all contents.
         """
         self.shapes = {}
+        Grid.SHAPE_COUNT = 0
+        Line.SHAPE_COUNT = 0
+        Point.SHAPE_COUNT =0
 
     def get_selected_shapes(self):
         """
@@ -296,6 +299,13 @@ class Shape(object):
         self.id = self.t + "%s" % id_num
         self.name = self.id
 
+    def move_to_mpos(self, mpos_list, screen_coord=[]):
+        self.cp_list = []
+        self.add_cp_from_mp(mpos_list)
+
+        if screen_coord:
+            self.screen_coord = screen_coord
+
     def update_from_dict(self, shape_dict):
         # We dont allow id updates
         shape_dict.pop("id", None)
@@ -417,8 +427,8 @@ class Grid(Shape):
         d["motor_positions"] = self.cp_list[0].as_dict()
 
         # MXCuBE - 2 WF compatability
-        d["x1"] = float((self.beam_pos[0] - d["screen_coord"][0]) / self.pixels_per_mm[0])
-        d["y1"] = float((self.beam_pos[1] - d["screen_coord"][1]) / self.pixels_per_mm[1])
+        d["x1"] = -float((self.beam_pos[0] - d["screen_coord"][0]) / self.pixels_per_mm[0])
+        d["y1"] = -float((self.beam_pos[1] - d["screen_coord"][1]) / self.pixels_per_mm[1])
         d["steps_x"] = d["num_cols"]
         d["steps_y"] = d["num_rows"]
         d["dx_mm"] = d["width"] / self.pixels_per_mm[0]
