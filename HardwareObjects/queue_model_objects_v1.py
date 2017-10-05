@@ -467,6 +467,7 @@ class DataCollection(TaskNode):
         self.html_report = str()
         self.id = int()
         self.lims_group_id = None
+        self.center_before_collect = False
 
     def as_dict(self):
 
@@ -647,6 +648,9 @@ class Characterisation(TaskNode):
         self.html_report = None
         self.run_characterisation = True
         self.characterisation_software = None
+
+        self.auto_add_diff_plan = True
+        self.diffraction_plan = []
 
     def get_name(self):
         return '%s_%i' % (self._name, self._number)

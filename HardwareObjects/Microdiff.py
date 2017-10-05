@@ -57,8 +57,8 @@ class Microdiff(MiniDiff.MiniDiff):
         self.backLight = self.getDeviceByRole('BackLight')  
 
         self.beam_info = self.getObjectByRole('beam_info')
-        self.centring_hwobj = self.getObjectByRole('centring')
-        self.zoom_centre = {"x": 0, "y":0}
+
+        self.wait_ready = self._wait_ready
 
     def getMotorToExporterNames(self):
         MOTOR_TO_EXPORTER_NAME = {"focus":self.focusMotor.getProperty('motor_name'), "kappa":self.kappaMotor.getProperty('motor_name'),
@@ -91,13 +91,12 @@ class Microdiff(MiniDiff.MiniDiff):
         return False
 
     def _wait_ready(self, timeout=None):
-        if timeout <= 0:
+        # None means infinite timeout
+        # <=0 means default timeout
+        if timeout is not None and timeout <= 0:
             timeout = self.timeout
-        tt1 = time.time()
-        while time.time() - tt1 < timeout:
-             if self._ready():
-                 break
-             else:
+        with gevent.Timeout(timeout, RuntimeError("Timeout waiting for diffractometer to be ready")):
+             while not self._ready():
                  time.sleep(0.5)
 
     def moveToPhase(self, phase, wait=False, timeout=None):
@@ -247,14 +246,14 @@ class Microdiff(MiniDiff.MiniDiff):
 
     def moveToBeam(self, x, y):
         if not self.in_plate_mode():  
-            super(Microdiff,self).moveToBeam(x,y)
+            MiniDiff.MiniDiff.moveToBeam(self, x, y)
         else:          
             try:
                 beam_xc = self.getBeamPosX()
                 beam_yc = self.getBeamPosY()
 
-                self.centringVertical.moveRelative((y-beam_yc)/float(self.pixelsPerMmZ))
-                self.centringPhiy.moveRelative(-(x-beam_xc)/float(self.pixelsPerMmY))
+                self.centringVertical.moveRelative(self.centringPhiz.direction*(y-beam_yc)/float(self.pixelsPerMmZ))
+                self.centringPhiy.moveRelative(self.centringPhiy.direction*(x-beam_xc)/float(self.pixelsPerMmY))
 
             except:
                 logging.getLogger("user_level_log").exception("Microdiff: could not move to beam, aborting")
@@ -309,37 +308,6 @@ class Microdiff(MiniDiff.MiniDiff):
 
     def setBackLightLevel(self, level):
         return self.backLight.move(level)
-
-    def convert_from_obj_to_name(self, motor_pos):
-        motors = {}
-        for motor_role in ('phiy', 'phiz', 'sampx', 'sampy', 'zoom',
-                           'phi', 'focus', 'kappa', 'kappa_phi'):
-            mot_obj = self.getObjectByRole(motor_role)
-            try:
-                motors[motor_role] = motor_pos[mot_obj]
-            except KeyError:
-                motors[motor_role] = mot_obj.getPosition()
-        motors["beam_x"] = (self.getBeamPosX() - \
-                            self.zoom_centre['x'] )/self.pixelsPerMmY
-        motors["beam_y"] = (self.getBeamPosY() - \
-                            self.zoom_centre['y'] )/self.pixelsPerMmZ
-        return motors
-
-    def get_centred_point_from_coord(self, x, y, return_by_names=None):
-        """
-        Descript. :
-        """
-        self.centring_hwobj.initCentringProcedure()
-        self.centring_hwobj.appendCentringDataPoint({
-                   "X" : (x - self.getBeamPosX()) / self.pixelsPerMmY,
-                   "Y" : (y - self.getBeamPosY()) / self.pixelsPerMmZ})
-
-#        self.omega_reference_add_constraint()
-        pos = self.centring_hwobj.centeredPosition()  
-        if return_by_names:
-            pos = self.convert_from_obj_to_name(pos)
-            to_float(pos)
-        return pos
 
 def set_light_in(light, light_motor, zoom):
     MICRODIFF.getDeviceByRole("FrontLight").move(0)
