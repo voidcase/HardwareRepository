@@ -7,8 +7,8 @@ import os
 import time
 import socket
 import logging
-try
-    from sdm import storage
+try:
+    from sdm import storage, Visitor
 except:
     raise Exception('Cannot import SDM library.')
 
@@ -25,12 +25,11 @@ class MaxIVSession(Session):
     def init(self):
         self.default_precision = "04"
         self.login = ''
-	self.is_commissioning = False
+        self.is_commissioning = False
         self.synchrotron_name = self.getProperty('synchrotron_name')
         self.endstation_name = self.getProperty('endstation_name').lower()
         self.suffix = self["file_info"].getProperty('file_suffix')
-        self.base_directory = self["file_info"].\
-                              getProperty('base_directory')
+        self.base_directory = self["file_info"].getProperty('base_directory')
 
         self.base_process_directory = self["file_info"].\
             getProperty('processed_data_base_directory')
@@ -41,13 +40,10 @@ class MaxIVSession(Session):
         self.processed_data_folder_name = self["file_info"].\
             getProperty('processed_data_folder_name')
 
-	self.commissioning_data_directory =  self["file_info"].\
-            getProperty('commissioning_data_directory')
-
-	try:
+        try:
             self.in_house_users = self.getProperty("inhouse_users").split(',')
-	except:
-	    self.in_house_users = []
+        except:
+            self.in_house_users = []
 
         try:
             domain = socket.getfqdn().split('.')
@@ -63,35 +59,36 @@ class MaxIVSession(Session):
         queue_model_objects.PathTemplate.set_path_template_style(self.synchrotron_name)
         queue_model_objects.PathTemplate.set_data_base_path(self.base_directory)
 
-	self.commissioning_fake_proposal = {'Laboratory': {'address': None,
-					 		   'city': 'Lund',
-		 	                                   'laboratoryId': 312171,
-							   'name': 'Lund University'},
-					   'Person': {'familyName': 'commissioning',
-						      'givenName': '',
-						      'laboratoryId': 312171,
-						      'login': '',
-						      'personId': 0},
-					   'Proposal': {'code': 'MX',
-							'number': time.strftime("%Y"),
-						        'proposalId': '0',
-						        'timeStamp': time.strftime("%Y%m%d"),
-						        'title': 'Commissioning Proposal',
-						        'type': 'MX'},
-					  'Session': [{'is_inhouse': True,
- 						      'session': {'beamlineName': 'BioMAX',
-								  'comments': 'Fake session for commissioning',
-								  'endDate': '2027-12-31 23:59:59',
-								  'nbShifts': 100,
-								  'proposalId': '0',
-								  'scheduled': 0,
-								  'sessionId': 0,
-								  'startDate': '2016-01-01 00:00:00'}}
-						    ]}
+        self.commissioning_fake_proposal = {'Laboratory': {'address': None,
+                                                           'city': 'Lund',
+                                                           'laboratoryId': 312171,
+                                                           'name': 'Lund University'},
+                                            'Person': {'familyName': 'commissioning',
+                                                       'givenName': '',
+                                                       'laboratoryId': 312171,
+                                                       'login': '',
+                                                       'personId': 0},
+                                            'Proposal': {'code': 'MX',
+                                                         'number': time.strftime("%Y"),
+                                                         'proposalId': '0',
+                                                         'timeStamp': time.strftime("%Y%m%d"),
+                                                         'title': 'Commissioning Proposal',
+                                                         'type': 'MX'},
+                                            'Session': [{'is_inhouse': True,
+                                                         'session': {'beamlineName': 'BioMAX',
+                                                                     'comments': 'Fake session for commissioning',
+                                                                     'endDate': '2027-12-31 23:59:59',
+                                                                     'nbShifts': 100,
+                                                                     'proposalId': '0',
+                                                                     'scheduled': 0,
+                                                                     'sessionId': 0,
+                                                                     'startDate': '2016-01-01 00:00:00'}}
+                                                        ]
+                                            }
 
     def set_in_commissioning(self, proposal_info):
-	self.proposal_code = proposal_info['Proposal']['code']
-	self.proposal_number = proposal_info['Proposal']['number']
+        self.proposal_code = proposal_info['Proposal']['code']
+        self.proposal_number = proposal_info['Proposal']['number']
         self.is_commissioning = True
 
     def get_proposal(self):
@@ -124,21 +121,21 @@ class MaxIVSession(Session):
         else:
             start_time = time.strftime("%Y%m%d")
 
-	if not self.is_commissioning:
+        if not self.is_commissioning:
             # /data/visitors/biomax/prop/visit/
             # /data/(user-type)/(beamline)/(proposal)/(visit)/raw
             directory = os.path.join(self.base_directory,
-                                 self.get_user_category(self.login),  # 'staff','visitors', 'proprietary'
-                                 self.beamline_name.lower(),
-                                 self.get_proposal(),
-                                 start_time)
-	else:
-	    # /data/staff/biomax/commissioning/date
+                                     self.get_user_category(self.login),
+                                     self.beamline_name.lower(),
+                                     self.get_proposal(),
+                                     start_time)
+        else:
+            # /data/staff/biomax/commissioning/date
             directory = os.path.join(self.base_directory,
-				 'staff',
-                                 self.beamline_name.lower(),
-				 'commissioning',
-				 time.strftime("%Y%m%d"))
+                                    'staff',
+                                    self.beamline_name.lower(),
+                                    'commissioning',
+                                    time.strftime("%Y%m%d"))
 
         logging.getLogger("HWR").info("[MAX IV Session] Data directory for proposal %s: %s" % (self.get_proposal(), directory))
 
@@ -151,30 +148,41 @@ class MaxIVSession(Session):
             start_date = start_time.split(' ')[0].replace('-', '')
         else:
             start_date = time.strftime("%Y%m%d")
+
         self.set_session_start_date(start_date)
+
+#        self.sdmuser = Visitor(self.login, self.beamline_name)
+#        self.sdmuser.proposal = self.proposal_number
+#	 self.sdmuser.visit = start_date
+
+#	 self.sdmuser.activate_setting()
+
+#        logging.getLogger("HWR").info("[MAX IV Session] SDM Data directory created: %s" % self.sdmuser.path)
+        # self.sdmuser.activate_setting() # done when setting the visit
+
         # this checks that the beamline data path has been properly created
         # e.g. /data/visitors/biomax
-	try:
-            self.storage = storage.Storage(self.get_user_category(self.login), self.endstation_name)
-	except Exception as ex:
-	    print ex
-        # this creates the path for the data and ensures proper permissions.
-        # e.g. /data/visitors/biomax/<proposal>/<visit>/{raw, process}
-	if self.is_commissioning:
-	    group = self.beamline_name.lower()
-	else:
+        try:
+             self.storage = storage.Storage(self.get_user_category(self.login), self.endstation_name)
+        except Exception as ex:
+            print ex
+            # this creates the path for the data and ensures proper permissions.
+            # e.g. /data/visitors/biomax/<proposal>/<visit>/{raw, process}
+        if self.is_commissioning:
+           group = self.beamline_name.lower()
+        else:
             group = self.storage.get_proposal_group(self.proposal_number)
-	try:
+        try:
             self.storage.create_path(self.proposal_number,
-                                 group,
-                                 self.get_session_start_date(),
-                                 self.login)
+                                      group,
+                                      self.get_session_start_date(),
+                                      self.login)
             proposal_path = '{0}/{1}'.format(self.storage.beamline_path, self.proposal_number)
-	    logging.getLogger("HWR").info("[MAX IV Session] SDM Data directory created: %s" % proposal_path)
-	except Exception as ex:
-	    msg = "[MAX IV Session] SDM Data directory creation failed. %s" % ex
-	    logging.getLogger("HWR").error(msg)
-	    raise Exception(msg)
+            logging.getLogger("HWR").info("[MAX IV Session] SDM Data directory created: %s" % proposal_path)
+        except Exception as ex:
+            msg = "[MAX IV Session] SDM Data directory creation failed. %s" % ex
+            logging.getLogger("HWR").error(msg)
+            raise Exception(msg)
 
     def is_inhouse(self, user, code=None):
         """
@@ -190,6 +198,7 @@ class MaxIVSession(Session):
             return False
 
     def get_user_category(self, user):
+        # 'staff','visitors', 'proprietary'
         # missing industrial users
         if self.is_inhouse(user):
             user_category = 'staff'
