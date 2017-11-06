@@ -132,7 +132,7 @@ class Shapes(HardwareObject):
         """
         mpos = [self.get_shape(refid).mpos() for refid in refs]
         spos_list = [self.get_shape(refid).screen_coord for refid in refs]
-        spos = reduce((lambda x, y: x + y), spos_list, ())
+        spos = reduce((lambda x, y: tuple(x) + tuple(y)), spos_list, ())
         shape = self.add_shape_from_mpos(mpos, spos, t)
         shape.refs = refs
 
@@ -292,7 +292,8 @@ class Shape(object):
 
     def update_position(self, transform):
         spos_list = [transform(cp.as_dict()) for cp in self.cp_list]
-        self.screen_coord = spos_list[0]
+        spos_list = tuple([pos for l in spos_list for pos in l])
+        self.screen_coord = spos_list
 
     def add_cp_from_mp(self, mpos_list):
         for mp in mpos_list:

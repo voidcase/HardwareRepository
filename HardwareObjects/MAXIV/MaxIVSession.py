@@ -153,12 +153,12 @@ class MaxIVSession(Session):
 
 #        self.sdmuser = Visitor(self.login, self.beamline_name)
 #        self.sdmuser.proposal = self.proposal_number
-#	 self.sdmuser.visit = start_date
+#	       self.sdmuser.visit = start_date
 
-#	 self.sdmuser.activate_setting()
+#	       self.sdmuser.activate_setting()
 
 #        logging.getLogger("HWR").info("[MAX IV Session] SDM Data directory created: %s" % self.sdmuser.path)
-        # self.sdmuser.activate_setting() # done when setting the visit
+#        self.sdmuser.activate_setting() # done when setting the visit
 
         # this checks that the beamline data path has been properly created
         # e.g. /data/visitors/biomax
