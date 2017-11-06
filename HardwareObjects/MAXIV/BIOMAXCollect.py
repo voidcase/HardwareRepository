@@ -21,6 +21,8 @@ from HardwareRepository.TaskUtils import *
 from HardwareRepository.BaseHardwareObjects import HardwareObject
 from AbstractCollect import AbstractCollect
 
+from EigerDataSet import EigerDataSet
+
 
 class BIOMAXCollect(AbstractCollect, HardwareObject):
     """
@@ -455,7 +457,6 @@ class BIOMAXCollect(AbstractCollect, HardwareObject):
 
     	logging.getLogger("HWR").info("[COLLECT] Generating thumbnails, output filename: %s" % jpeg_thumbnail_full_path)
     	logging.getLogger("HWR").info("[COLLECT] Generating thumbnails, data path: %s" % data_path)
-    	from EigerDataSet import EigerDataSet
     	input_file = data_path
     	binfactor = 1
     	nimages = 1
@@ -467,18 +468,14 @@ class BIOMAXCollect(AbstractCollect, HardwareObject):
     	# TODO: get num_images_per_file as variable
     	time.sleep(2)
     	if frame_number > 1:
-    	    frame_number = frame_number / 100 
-    	with gevent.Timeout(30, Exception("Timeout waiting for the data file available.")):
-    	    while not os.path.exists(data_path):
-    	    	gevent.sleep(0.1)
-	
-     	time.sleep(2)	
+    	    frame_number = frame_number / 100
+
+        self.wait_for_file_copied(data_path) # master file
+
     	data_file = data_path.replace('master', 'data_{:06d}'.format(frame_number))
-    	with gevent.Timeout(30, Exception("Timeout waiting for the data file available.")):
-    	    while not os.path.exists(data_file):
-    	    	gevent.sleep(0.1)
-    	
-        time.sleep(2)	
+
+        self.wait_for_file_copied(data_path) # data file
+
     	if not os.path.exists(os.path.dirname(jpeg_thumbnail_full_path)):
     	    os.makedirs(os.path.dirname(jpeg_thumbnail_full_path))
     	try:
@@ -497,14 +494,18 @@ class BIOMAXCollect(AbstractCollect, HardwareObject):
     	except Exception as ex:
     	    print ex
 
-    def store_image_in_lims_by_frame_num(self, frame, motor_position_id=None):
-        """
-       # Descript. :
-        """
-        # Dont save mesh first and last images
-        # Mesh images (best positions) are stored after data analysis
-        logging.getLogger("HWR").info("TODO: fix store_image_in_lims_by_frame_num method for nimages>1")
-        return
+    def wait_for_file_copied(self, full_file_path):
+        # first wait for the file being created
+        with gevent.Timeout(30, Exception("Timeout waiting for the data file available.")):
+            while not os.path.exists(full_file_path):
+                gevent.sleep(0.1)
+
+        # then wait to finish the copy
+        size1 = -1
+        with gevent.Timeout(300, Exception("Timeout waiting for the data to be copied available.")):
+            while size1 != os.path.getsize(full_file_path):
+                size1 = os.path.getsize(full_file_path)
+                gevent.sleep(1)
 
     def store_image_in_lims(self, frame_number, motor_position_id=None):
         """
@@ -585,7 +586,7 @@ class BIOMAXCollect(AbstractCollect, HardwareObject):
                 if number_of_snapshots > 1:
                     self.diffractometer_hwobj.move_omega_relative(90)
                     time.sleep(1) # needed, otherwise will get the same images
-                    
+
 
     def trigger_auto_processing(self, process_event, params_dict, frame_number):
         """
