@@ -8,6 +8,7 @@ import suds; logging.getLogger("suds").setLevel(logging.INFO)
 import os
 import itertools
 import time
+from urlparse import urljoin
 
 from suds.transport.http import HttpAuthenticated
 from suds.client import Client
@@ -122,6 +123,7 @@ class ISPyBClient2(HardwareObject):
         self.ws_username = None
         self.ws_password = None
 
+	self.base_url = None
     def init(self):
         """
         Init method declared by HardwareObject.
@@ -150,7 +152,7 @@ class ISPyBClient2(HardwareObject):
             self.proxy = {'http': self.proxy_address, 'https': self.proxy_address}
         else:
             self.proxy = {}
-
+	self.base_url = self.getProperty("base_url").strip()
 	logging.getLogger("HWR").debug('[ISPYB] Proxy address: %s' %self.proxy)
         try:
             # ws_root is a property in the configuration xml file
@@ -758,6 +760,18 @@ class ISPyBClient2(HardwareObject):
                 exception("Error in store_data_collection: " + \
                               "could not connect to server")
 
+    def dc_link(self, cid):
+	"""
+        Get the LIMS link the data collection with id <id>.
+
+        :param str did: Data collection ID
+        :returns: The link to the data collection
+        """
+	dc_url = 'ispyb/user/viewResults.do?reqCode=display&dataCollectionId=%s' % cid
+	url = ''
+	if self.base_url is not None:
+	   url = urljoin(self.base_url, dc_url)
+	return url
 
     @trace
     def store_beamline_setup(self, session_id, beamline_setup):

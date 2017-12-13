@@ -158,7 +158,7 @@ class MicrodiffMotor(AbstractMotor, Device):
         self.move(self.getPosition() + relativePosition)
 
     def syncMoveRelative(self, relative_position, timeout=None):
-        return self.syncMove(self.getPosition() + relative_position)
+        return self.syncMove(self.getPosition() + relative_position, timeout)
 
     def waitEndOfMove(self, timeout=None):
         with Timeout(timeout):
