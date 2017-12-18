@@ -51,7 +51,7 @@ class CatsMaint(Equipment):
     def __init__(self, *args, **kwargs):
         Equipment.__init__(self, *args, **kwargs)
 
-        self._state = None
+        self._state = "READY"
         self._running = None
         self._powered = None
         self._toolopen = None
