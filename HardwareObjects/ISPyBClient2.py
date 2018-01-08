@@ -15,6 +15,7 @@ from suds.client import Client
 from suds import WebFault
 from suds.sudsobject import asdict
 from urllib2 import URLError
+from urlparse import urljoin
 from HardwareRepository.BaseHardwareObjects import HardwareObject
 from datetime import datetime
 from collections import namedtuple
@@ -123,7 +124,12 @@ class ISPyBClient2(HardwareObject):
         self.ws_username = None
         self.ws_password = None
 
+<<<<<<< HEAD
 	self.base_url = None
+=======
+        self.base_result_url = None
+
+>>>>>>> origin/2.2
     def init(self):
         """
         Init method declared by HardwareObject.
@@ -152,8 +158,18 @@ class ISPyBClient2(HardwareObject):
             self.proxy = {'http': self.proxy_address, 'https': self.proxy_address}
         else:
             self.proxy = {}
+<<<<<<< HEAD
 	self.base_url = self.getProperty("base_url").strip()
 	logging.getLogger("HWR").debug('[ISPYB] Proxy address: %s' %self.proxy)
+=======
+
+        try:
+            self.base_result_url = self.getProperty("base_result_url").strip()
+        except AttributeError:
+            pass
+
+        logging.getLogger("HWR").debug('[ISPYB] Proxy address: %s' %self.proxy)
+>>>>>>> origin/2.2
         try:
             # ws_root is a property in the configuration xml file
             if self.ws_root:
@@ -761,17 +777,17 @@ class ISPyBClient2(HardwareObject):
                               "could not connect to server")
 
     def dc_link(self, cid):
-	"""
+    	"""
         Get the LIMS link the data collection with id <id>.
 
         :param str did: Data collection ID
         :returns: The link to the data collection
         """
-	dc_url = 'ispyb/user/viewResults.do?reqCode=display&dataCollectionId=%s' % cid
-	url = ''
-	if self.base_url is not None:
-	   url = urljoin(self.base_url, dc_url)
-	return url
+        dc_url = 'ispyb/user/viewResults.do?reqCode=display&dataCollectionId=%s' % cid
+        url = None
+        if self.base_result_url is not None:
+           url = urljoin(self.base_result_url, dc_url)
+        return url
 
     @trace
     def store_beamline_setup(self, session_id, beamline_setup):
