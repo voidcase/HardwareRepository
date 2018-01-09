@@ -124,12 +124,8 @@ class ISPyBClient2(HardwareObject):
         self.ws_username = None
         self.ws_password = None
 
-<<<<<<< HEAD
-	self.base_url = None
-=======
         self.base_result_url = None
 
->>>>>>> origin/2.2
     def init(self):
         """
         Init method declared by HardwareObject.
@@ -158,10 +154,6 @@ class ISPyBClient2(HardwareObject):
             self.proxy = {'http': self.proxy_address, 'https': self.proxy_address}
         else:
             self.proxy = {}
-<<<<<<< HEAD
-	self.base_url = self.getProperty("base_url").strip()
-	logging.getLogger("HWR").debug('[ISPYB] Proxy address: %s' %self.proxy)
-=======
 
         try:
             self.base_result_url = self.getProperty("base_result_url").strip()
@@ -169,7 +161,6 @@ class ISPyBClient2(HardwareObject):
             pass
 
         logging.getLogger("HWR").debug('[ISPYB] Proxy address: %s' %self.proxy)
->>>>>>> origin/2.2
         try:
             # ws_root is a property in the configuration xml file
             if self.ws_root:
