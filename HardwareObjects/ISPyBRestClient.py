@@ -48,10 +48,11 @@ class ISPyBRestClient(HardwareObject):
         self.__site = self.getProperty('site').strip()
         
         try:
-            self.base_result_url = self.getProperty("base_result_url").strip()
-        except AttributeError:
-            pass
-
+            self.base_result_url = self.getProperty("base_result_url")
+	    if self.base_result_url: 
+		self.base_result_url = self.base_result_url.strip() 
+        except Exception:
+	    pass
         self.__update_rest_token()
 
     def __update_rest_token(self):
