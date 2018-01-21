@@ -113,7 +113,10 @@ class ID232MultiCollect(ESRFMultiCollect):
         energy = self._tunable_bl.getCurrentEnergy()
         diffr = self.getObjectByRole("diffractometer")
         diffr.setNbImages(number_of_images)
-        return self._detector.prepare_acquisition(take_dark, start, osc_range, exptime, npass, number_of_images, comment, energy, trigger_mode="EXTERNAL_GATE")
+        if self.mesh :
+            return self._detector.prepare_acquisition(take_dark, start, osc_range, exptime, npass, number_of_images, comment, energy, trigger_mode="EXTERNAL_GATE")
+        else :
+            return self._detector.prepare_acquisition(take_dark, start, osc_range, exptime, npass, number_of_images, comment, energy, trigger_mode="EXTERNAL_TRIGGER")
 
     def open_fast_shutter(self):
         self.getObjectByRole("fastshut").actuatorIn()
