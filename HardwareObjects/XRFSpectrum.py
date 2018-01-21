@@ -83,7 +83,7 @@ class XRFSpectrum(Equipment):
             return False
         return self.doSpectrum is not None
 
-    def startXrfSpectrum(self,ct,directory,prefix,session_id=None,blsample_id=None):
+    def startXrfSpectrum(self,ct,directory, archive_directory, prefix,session_id=None,blsample_id=None):
         self.spectrumInfo = {"sessionId": session_id, "blSampleId": blsample_id}
         self.spectrumCommandStarted()
         if not os.path.isdir(directory):
@@ -105,18 +105,20 @@ class XRFSpectrum(Equipment):
             curr["escan_dir"]=directory
             curr["escan_prefix"]=prefix
 
-        a = directory.split(os.path.sep)
-        suffix_path=os.path.join(*a[4:])
-        if 'inhouse' in a :
-            a_dir = os.path.join(self.archive_path, a[2], suffix_path)
-        else:
-            a_dir = os.path.join(self.archive_path,a[4],a[3],*a[5:])
-        if not os.path.exists(a_dir):
+        if not archive_directory:
+            a = directory.split(os.path.sep)
+            suffix_path=os.path.join(*a[4:])
+            if 'inhouse' in a :
+                archive_directory = os.path.join(self.archive_path, a[2], suffix_path)
+            else:
+                archive_directory = os.path.join(self.archive_path,a[4],a[3],*a[5:])
+        
+        if not os.path.exists(archive_directory):
             try:
-                logging.getLogger('user_level_log').debug("XRFSpectrum: creating %s", a_dir)
-                os.makedirs(a_dir)
+                logging.getLogger('user_level_log').debug("XRFSpectrum: creating %s", archive_directory)
+                os.makedirs(archive_directory)
             except OSError,diag:
-                logging.getLogger().error("XRFSpectrum: error creating directory %s (%s)" % (a_dir,str(diag)))
+                logging.getLogger().error("XRFSpectrum: error creating directory %s (%s)" % (archive_directory,str(diag)))
                 self.spectrumStatusChanged("Error creating directory")
                 return False 
         
@@ -134,7 +136,7 @@ class XRFSpectrum(Equipment):
             fileprefix = _pattern % i
             i=i+1
 
-        archive_path = os.path.join(a_dir, fileprefix)
+        archive_path = os.path.join(archive_directory, fileprefix)
         self.spectrumInfo["filename"] = filename
         self.spectrumInfo["scanFileFullPath"] = os.path.extsep.join((archive_path, "dat"))
         self.spectrumInfo["jpegScanFileFullPath"] = os.path.extsep.join((archive_path, "png"))
@@ -318,10 +320,11 @@ class XRFSpectrum(Equipment):
 
         #stop the procedure if hutch not searched
         stat = safshut.getShutterState()
+        """
         if  stat == 'disabled':
             logging.getLogger("user_level_log").exception('XRFSpectrum: hutch not searched, exiting')
             return False
-
+        """
         fluodet_ctrl =  self.getObjectByRole("fluodet_ctrl")
         fluodet_ctrl.actuatorIn()
 
@@ -336,12 +339,16 @@ class XRFSpectrum(Equipment):
         init_transm = self.transmission_hwobj.getValue()
         logging.getLogger("user_level_log").info("Looking for maximum attenuation, please wait")
         ret = self._findAttenuation(ct)
+
         self.ctrl_hwobj.diffractometer.msclose()
         fluodet_ctrl.actuatorOut()
         self.transmission_hwobj.setTransmission(init_transm)
         return ret
 
     def _findAttenuation(self, ct):
+        fname = self.spectrumInfo["filename"].replace('.dat', '.raw')
+        self.mca_hwobj.set_presets(erange=1, ctime=ct, fname=fname)
+        """
         table = self.getProperty("transmission_table")
         if table:
             tf = []
@@ -388,5 +395,5 @@ class XRFSpectrum(Equipment):
         if ic < min_cnt:
             logging.getLogger("user_level_log").exception('Could not find satisfactory attenuation (is the mca properly set up?), giving up.')
             return False
-
+        """
         return True
