@@ -17,6 +17,7 @@ class EnergyMockup(Equipment):
        self.move_energy = self.start_move_energy 
        self.getEnergyLimits  = self.get_energy_limits
        self._abort = False
+       self.startMoveEnergy = self.start_move_energy
 
    def update_values(self):
        self.emit("energyChanged", self.energy_value, self.wavelength_value)
