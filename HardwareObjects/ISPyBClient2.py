@@ -181,22 +181,22 @@ class ISPyBClient2(HardwareObject):
                 _WS_AUTOPROC_URL = _WSDL_ROOT + \
                     'ToolsForAutoprocessingWebService?wsdl'
 
-                t1 = HttpAuthenticated(username = self.ws_username, 
+                t1 = HttpAuthenticated(username = self.ws_username,
                                       password = self.ws_password,
 			              proxy=self.proxy)
-                
-                t2 = HttpAuthenticated(username = self.ws_username, 
+
+                t2 = HttpAuthenticated(username = self.ws_username,
                                       password = self.ws_password,
 				      proxy=self.proxy)
-                
-                t3 = HttpAuthenticated(username = self.ws_username, 
+
+                t3 = HttpAuthenticated(username = self.ws_username,
                                       password = self.ws_password,
 				      proxy=self.proxy)
 
                 t4 = HttpAuthenticated(username = self.ws_username,
                                        password = self.ws_password,
 				       proxy=self.proxy)
-                try: 
+                try:
                     self.__shipping = Client(_WS_SHIPPING_URL, timeout = 3,
                                              transport = t1, cache=None,
 					     proxy=self.proxy)
@@ -209,8 +209,8 @@ class ISPyBClient2(HardwareObject):
                     self.__autoproc_ws = Client(_WS_AUTOPROC_URL, timeout = 3,
                                              transport = t4, cache = None,
 					     proxy=self.proxy)
-                
-                    # ensure that suds do not create those files in tmp 
+
+                    # ensure that suds do not create those files in tmp
                     self.__shipping.set_options(cache=None, location=_WS_SHIPPING_URL)
                     self.__collection.set_options(cache=None, location=_WS_COLLECTION_URL)
                     self.__tools_ws.set_options(cache=None, location=_WS_BL_SAMPLE_URL)
@@ -223,7 +223,7 @@ class ISPyBClient2(HardwareObject):
             logging.getLogger("ispyb_client").exception(_CONNECTION_ERROR_MSG)
             return
 	#logging.getLogger('suds.client').setLevel(logging.DEBUG)
-	
+
         # Add the porposal codes defined in the configuration xml file
         # to a directory. Used by translate()
         try:
@@ -249,7 +249,7 @@ class ISPyBClient2(HardwareObject):
     def get_login_type(self):
         return self.loginType
 
-    def translate(self, code, what):  
+    def translate(self, code, what):
         """
         Given a proposal code, returns the correct code to use in the GUI,
         or what to send to LDAP, user office database, or the ISPyB database.
@@ -267,6 +267,32 @@ class ISPyBClient2(HardwareObject):
 
     def send_email(self):
         raise NotImplementedException("Deprecated ?")
+
+    @trace
+    def echo(self):
+        """
+        Method to ensure the communication with the SOAP server.
+
+        :returns: A boolean that indicates if the answer recived was
+         satisfactory.
+        :rtype: boolean
+        """
+        answer = False
+
+        if not self.__shipping:
+            msg = "Error in echo: Could not connect to server."
+            logging.getLogger("ispyb_client").warning(msg)
+            raise Exception('Error in echo: Could not connect to server.')
+
+        try:
+            self.__shipping.service.echo()
+            answer = True
+        except WebFault as web_error:
+            logging.getLogger('ispyb_client').warning(str(web_error))
+        except Exception as e:
+            logging.getLogger('ispyb_client').warning(str(e))
+
+        return answer
 
     @trace
     def get_proposal_by_username(self, username):
@@ -739,7 +765,7 @@ class ISPyBClient2(HardwareObject):
             if beamline_setup:
                 lims_beamline_setup = ISPyBValueFactory.\
                     from_bl_config(self.__collection, beamline_setup)
-          
+
                 lims_beamline_setup.synchrotronMode = \
                     data_collection.synchrotronMode
 
@@ -850,7 +876,7 @@ class ISPyBClient2(HardwareObject):
 
                     data_collection = ISPyBValueFactory().\
                         from_data_collect_parameters(self.__collection, mx_collection)
-  
+
                     self.__collection.service.\
                         storeOrUpdateDataCollection(data_collection)
                 except WebFault:
@@ -907,7 +933,7 @@ class ISPyBClient2(HardwareObject):
         """
         if self.__disabled:
             return
-    
+
         if self.__collection:
             if 'dataCollectionId' in image_dict:
                 try:
@@ -1509,7 +1535,7 @@ class ISPyBClient2(HardwareObject):
         if self.__shipping:
             try:
                proposals = eval(self.__shipping.service.\
-                  findProposalsByLoginName(user_name))  
+                  findProposalsByLoginName(user_name))
                if proposal_list is not None:
                    for proposal in proposals:
                         if proposal['type'].upper() in ['MX', 'MB'] and \
@@ -1572,7 +1598,7 @@ class ISPyBClient2(HardwareObject):
                         logging.getLogger("ispyb_client").exception(str(e))
                         sessions = []
 
-                    
+
                     res_proposal.append({'Proposal': proposal,
                                          'Person': utf_encode(asdict(person)),
                                          'Laboratory': utf_encode(asdict(lab)),
@@ -1584,7 +1610,7 @@ class ISPyBClient2(HardwareObject):
             logging.getLogger("ispyb_client").\
                 exception("Error in get_proposal: Could not connect to server," + \
                           " returning empty proposal")
-        return res_proposal 
+        return res_proposal
 
     def store_autoproc_program(self, autoproc_program_dict):
         """
@@ -1621,7 +1647,7 @@ class ISPyBClient2(HardwareObject):
 
         :param mx_collection: The data collection parameters.
         :type mx_collection: dict
-        
+
         :param beamline_setup: The beamline setup.
         :type beamline_setup: dict
 
