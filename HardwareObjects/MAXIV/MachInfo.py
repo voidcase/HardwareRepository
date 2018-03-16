@@ -38,6 +38,7 @@ import time
 import PyTango
 from HardwareRepository import HardwareRepository
 from HardwareRepository.BaseHardwareObjects import Equipment
+import json
 
 class MachInfo(Equipment):
     default_current = 0
@@ -101,14 +102,20 @@ class MachInfo(Equipment):
             if curr < 0:
                 self.current = 0.00
             else:
-	    	self.current = "{:.2f}".format(curr * 1000)
+                self.current = "{:.2f}".format(curr * 1000)
 
-	    self.lifetime = float("{:.2f}".format(self.curr_info_channel.Lifetime / 3600))
-            
-	    self.attention = False
+            self.lifetime = float("{:.2f}".format(self.curr_info_channel.Lifetime / 3600)) 
+            self.attention = False
             values = dict()
             values['current'] = self.current
-            values['message'] = self.message
+            msg = ''
+            try:
+                # for avoiding problems when operators feel creative
+                # some encoding problems with greek letters
+                msg = json.dumps(self.message.decode('windows-1252'))
+            except:
+                msg = ''
+            values['message'] = msg		    
             values['lifetime'] = self.lifetime
             values['attention'] = self.attention
             self.emit('machInfoChanged',values)
