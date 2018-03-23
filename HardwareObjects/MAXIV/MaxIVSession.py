@@ -63,10 +63,10 @@ class MaxIVSession(Session):
                                                            'city': 'Lund',
                                                            'laboratoryId': 312171,
                                                            'name': 'Lund University'},
-                                            'Person': {'familyName': 'commissioning',
-                                                       'givenName': '',
+                                            'Person': {'familyName': 'Commissioning',
+                                                       'givenName': 'Commi',
                                                        'laboratoryId': 312171,
-                                                       'login': '',
+                                                       'login': 'staff',
                                                        'personId': 0},
                                             'Proposal': {'code': 'MX',
                                                          'number': time.strftime("%Y"),
@@ -153,15 +153,6 @@ class MaxIVSession(Session):
 
         self.set_session_start_date(start_date)
 
-#        self.sdmuser = Visitor(self.login, self.beamline_name)
-#        self.sdmuser.proposal = self.proposal_number
-#	       self.sdmuser.visit = start_date
-
-#	       self.sdmuser.activate_setting()
-
-#        logging.getLogger("HWR").info("[MAX IV Session] SDM Data directory created: %s" % self.sdmuser.path)
-#        self.sdmuser.activate_setting() # done when setting the visit
-
         # this checks that the beamline data path has been properly created
         # e.g. /data/visitors/biomax
         try:
@@ -171,9 +162,10 @@ class MaxIVSession(Session):
             # this creates the path for the data and ensures proper permissions.
             # e.g. /data/visitors/biomax/<proposal>/<visit>/{raw, process}
         if self.is_commissioning:
-           group = self.beamline_name.lower()
+            group = self.beamline_name.lower()
         else:
             group = self.storage.get_proposal_group(self.proposal_number)
+        
         try:
             self.storage.create_path(self.proposal_number,
                                       group,
@@ -202,8 +194,13 @@ class MaxIVSession(Session):
     def get_user_category(self, user):
         # 'staff','visitors', 'proprietary'
         # missing industrial users
-        if self.is_inhouse(user):
+        if self.is_inhouse(user) or user == 'staff':
             user_category = 'staff'
         else:
             user_category = 'visitors'
         return user_category
+
+    def clear_session():
+        Session.clear_session()
+        self.login = ''        
+        self.is_commissioning = False
