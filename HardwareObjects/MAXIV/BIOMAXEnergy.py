@@ -44,6 +44,16 @@ class BIOMAXEnergy(Energy.Energy):
             self.energy_motor.connect('positionChanged', self.energyPositionChanged)
             self.energy_motor.connect('stateChanged', self.energyStateChanged)
 
+    def energyPositionChanged(self,pos):
+        wl=12.3984/pos
+        if wl:
+            self.emit('energyChanged', (pos/1000, wl*1000))
+            # self.emit('valueChanged', (pos, ))
+            self.emit('positionChanged', (pos/1000, ))
+
+    def energyStateChanged(self, state):
+        self.emit('stateChanged', (state))
+
     def getCurrentEnergy(self):
         if self.energy_motor is not None:
             try:
@@ -53,17 +63,34 @@ class BIOMAXEnergy(Energy.Energy):
                 return None
         return self.default_en
 
+    def getCurrentWavelength(self):
+        current_en = self.getCurrentEnergy()
+        if current_en:
+            curr_wave =  (12.3984/current_en)
+            logging.getLogger('user_level_log').debug("Get current wavelength %s" %curr_wave)
+            return curr_wave
+        return None
+
     def getEnergyLimits(self):
         if not self.tunable:
             return None
-
         if self.energy_motor is not None:
             try:
                 self.en_lims = self.energy_motor.getLimits()
 		self.en_lims = (float(self.en_lims[0])/1000, float(self.en_lims[1])/1000)
+        	logging.getLogger("HWR").debug("Get energy limits: %s" %str(self.en_lims))
                 return self.en_lims 
             except:
                 logging.getLogger("HWR").exception("EnergyHO: could not read energy motor limits")
                 return None
         return None 
+
+    def move_energy(self, energy, wait=True):
+        current_en = self.getCurrentEnergy()
+        pos = math.fabs(current_en - energy)
+        if pos < 0.001:
+            logging.getLogger('user_level_log').debug("Energy: already at %g, not moving", energy)
+        else:
+            logging.getLogger('user_level_log').debug("Energy: moving energy to %g", energy)
+            self.energy_motor.move(energy * 1000)
 
