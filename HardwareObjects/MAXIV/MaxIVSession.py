@@ -200,7 +200,10 @@ class MaxIVSession(Session):
             user_category = 'visitors'
         return user_category
 
-    def clear_session():
-        Session.clear_session()
+    def clear_session(self):
+        self.session_id = None
+        self.proposal_code = None
+        self.proposal_number = None
+
         self.login = ''        
         self.is_commissioning = False

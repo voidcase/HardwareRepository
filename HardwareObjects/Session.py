@@ -274,7 +274,7 @@ class Session(HardwareObject):
         """
         return self.user_group
 
-    def clear_session():
+    def clear_session(self):
         self.session_id = None
         self.proposal_code = None
         self.proposal_number = None
