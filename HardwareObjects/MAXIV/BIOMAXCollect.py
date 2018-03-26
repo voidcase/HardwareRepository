@@ -59,8 +59,8 @@ class BIOMAXCollect(AbstractCollect, HardwareObject):
         self.display = {} 
         self.stop_display = False
 
-	self.datacatalog_enabled = True
-	self.datacatalog_url = None
+        self.datacatalog_enabled = True
+        self.datacatalog_url = None
 
     def init(self):
         """
@@ -79,18 +79,18 @@ class BIOMAXCollect(AbstractCollect, HardwareObject):
         self.dtox_hwobj = self.getObjectByRole("dtox")
         self.detector_cover_hwobj = self.getObjectByRole("detector_cover")
         self.session_hwobj = self.getObjectByRole("session")
-	self.datacatalog_url = self.getProperty("datacatalog_url", None)
-	self.datacatalog_enabled = self.getProperty("datacatalog_enabled", True)
+        self.datacatalog_url = self.getProperty("datacatalog_url", None)
+        self.datacatalog_enabled = self.getProperty("datacatalog_enabled", True)
 
-	if self.datacatalog_enabled:
-	    logging.getLogger("HWR").info("[COLLECT] Datacatalog enabled, url: %s" % self.datacatalog_url)
-	else:
-	    logging.getLogger("HWR").warning("[COLLECT] Datacatalog not enabled")
+        if self.datacatalog_enabled:
+            logging.getLogger("HWR").info("[COLLECT] Datacatalog enabled, url: %s" % self.datacatalog_url)
+        else:
+            logging.getLogger("HWR").warning("[COLLECT] Datacatalog not enabled")
         
         self.safety_shutter_hwobj = self.getObjectByRole("safety_shutter")
         
         # todo
-	# self.fast_shutter_hwobj = self.getObjectByRole("fast_shutter")
+        # self.fast_shutter_hwobj = self.getObjectByRole("fast_shutter")
         # self.cryo_stream_hwobj = self.getObjectByRole("cryo_stream")
 
         undulators = []
@@ -102,21 +102,21 @@ class BIOMAXCollect(AbstractCollect, HardwareObject):
             pass
 
         self.exp_type_dict = {'Mesh': 'Mesh', 'Helical': 'Helical'}
-	try:
-             min_exp = self.detector_hwobj.get_minimum_exposure_time()
-	except:
-	     logging.getLogger("HWR").error("[HWR] *** Detector min exposure not available, set to 0.1")
-	     min_exp = 0.1
-	try:
-             pix_x = self.detector_hwobj.get_pixel_size_x()
-	except:
-	     logging.getLogger("HWR").error("[HWR] *** Detector X pixel size not available, set to 7-5e5")
-	     pix_x = 7.5e-5
-	try:
-             pix_y = self.detector_hwobj.get_pixel_size_y()
-	except:
-	     logging.getLogger("HWR").error("[HWR] *** Detector Y pixel size not available, set to 7-5e5")
-	     pix_y = 7.5e-5
+        try:
+            min_exp = self.detector_hwobj.get_minimum_exposure_time()
+        except:
+            logging.getLogger("HWR").error("[HWR] *** Detector min exposure not available, set to 0.1")
+            min_exp = 0.1
+        try:
+            pix_x = self.detector_hwobj.get_pixel_size_x()
+        except:
+            logging.getLogger("HWR").error("[HWR] *** Detector X pixel size not available, set to 7-5e5")
+            pix_x = 7.5e-5
+        try:
+            pix_y = self.detector_hwobj.get_pixel_size_y()
+        except:
+            logging.getLogger("HWR").error("[HWR] *** Detector Y pixel size not available, set to 7-5e5")
+            pix_y = 7.5e-5
 
         self.set_beamline_configuration(
              synchrotron_name="MAXIV",
@@ -227,69 +227,83 @@ class BIOMAXCollect(AbstractCollect, HardwareObject):
         1. check the currrent value is the same as the tobeset value
         2. check how to add detroi in the mode
         """
+        logging.getLogger("HWR").info("[COLLECT] Preparing data collection with parameters: %s" % self.current_dc_parameters)
+
         self.stop_display = False
         log = logging.getLogger("user_level_log")
+
         if "transmission" in self.current_dc_parameters:
             log.info("Collection: Setting transmission to %.3f",
                      self.current_dc_parameters["transmission"])
-            self.set_transmission(self.current_dc_parameters["transmission"])
+            try:
+                self.set_transmission(self.current_dc_parameters["transmission"])
+            except Exception as ex:
+                log.error('Collection: cannot set beamline transmission.')
+                logging.getLogger("HWR").error("[COLLECT] Error setting transmission: %s" % ex)
+                raise Exception("[COLLECT] Error setting transmission: %s" % ex)
 
         if "wavelength" in self.current_dc_parameters:
             log.info("Collection: Setting wavelength to %.3f",
                      self.current_dc_parameters["wavelength"])
-            self.set_wavelength(self.current_dc_parameters["wavelength"])
+            try:
+                self.set_wavelength(self.current_dc_parameters["wavelength"])
+            except Exception as ex:
+                log.error('Collection: cannot set beamline wavelength.')
+                logging.getLogger("HWR").error("[COLLECT] Error setting wavelength: %s" % ex)
+                raise Exception("[COLLECT] Error setting wavelength: %s" % ex)
+
         elif "energy" in self.current_dc_parameters:
             log.info("Collection: Setting energy to %.3f",
                      self.current_dc_parameters["energy"])
-	    try:
+            try:
                 self.set_energy(self.current_dc_parameters["energy"])
-	    except Exception as ex:
-		log.error('Collection: cannot set beamline energy.')
+            except Exception as ex:
+                log.error('Collection: cannot set beamline energy.')
                 logging.getLogger("HWR").error("[COLLECT] Error setting energy: %s" % ex)
-		raise Exception("[COLLECT] Error setting energy: %s" % ex)
+                raise Exception("[COLLECT] Error setting energy: %s" % ex)
 
         if "detroi" in self.current_dc_parameters:
-	    try:
+            try:
                 log.info("Collection: Setting detector to %s",
                      self.current_dc_parameters["detroi"])
                 self.set_detector_roi(self.current_dc_parameters["detroi"])
-	    except Exception as ex:
-		log.error('Collection: cannot set detector roi.')
+            except Exception as ex:
+                log.error('Collection: cannot set detector roi.')
                 logging.getLogger("HWR").error("[COLLECT] Error setting detector roi: %s" % ex)
-		raise Exception("[COLLECT] Error setting detector roi: %s" % ex)
+                raise Exception("[COLLECT] Error setting detector roi: %s" % ex)
 
         if "resolution" in self.current_dc_parameters:
-	    try:
+            try:
                 resolution = self.current_dc_parameters["resolution"]["upper"]
                 log.info("Collection: Setting resolution to %.3f", resolution)
                 self.set_resolution(resolution)
-	    except Exception as ex:
-		log.error('Collection: cannot set resolution.')
+            except Exception as ex:
+                log.error('Collection: cannot set resolution.')
                 logging.getLogger("HWR").error("[COLLECT] Error setting resolution: %s" % ex)
-		raise Exception("[COLLECT] Error setting resolution: %s" % ex)
+                raise Exception("[COLLECT] Error setting resolution: %s" % ex)
 
         elif 'detdistance' in self.current_dc_parameters:
-	    try:
+            try:
                 log.info("Collection: Moving detector to %f",
-                     self.current_dc_parameters["detdistance"])
+                self.current_dc_parameters["detdistance"])
             	self.move_detector(self.current_dc_parameters["detdistance"])
-	    except Exception as ex:
-		log.error('Collection: cannot set detector distance.')
+            except Exception as ex:
+                log.error('Collection: cannot set detector distance.')
                 logging.getLogger("HWR").error("[COLLECT] Error setting detector distance: %s" % ex)
-		raise Exception("[COLLECT] Error setting detector distance: %s" % ex)
+                raise Exception("[COLLECT] Error setting detector distance: %s" % ex)
 	
         self.triggers_to_collect = self.prepare_triggers_to_collect()
 
         log.info("Collection: Updating data collection in LIMS")
         self.update_data_collection_in_lims()
-	try:
+        try:
             self.prepare_detector()
-	except Exception as ex:
-	    log.error('Collection: cannot set prepare detector.')
+        except Exception as ex:
+            log.error('Collection: cannot set prepare detector.')
             logging.getLogger("HWR").error("[COLLECT] Error preparing detector: %s" % ex)
-	    raise Exception("[COLLECT] Error preparing detector: %s" % ex)
+            raise Exception("[COLLECT] Error preparing detector: %s" % ex)
         
-	# move MD3 to DataCollection phase if it's not
+        # move MD3 to DataCollection phase if it's not
         if self.diffractometer_hwobj.get_current_phase() != "DataCollection":
             log.info("Moving Diffractometer to Data Collection")
             self.diffractometer_hwobj.set_phase("DataCollection", wait=True, timeout=200)
@@ -808,13 +822,18 @@ class BIOMAXCollect(AbstractCollect, HardwareObject):
         self.move_detector(new_distance) 
 
     def set_energy(self, value):
-        #self.energy_hwobj.set_energy(value)
-        self.detector_hwobj.set_photon_energy(value*1000)
+        logging.getLogger("HWR").info("[COLLECT] Setting beamline energy to %s" %value)
+        self.energy_hwobj.startMoveEnergy(value) # keV
+        logging.getLogger("HWR").info("[COLLECT] Updating wavelength paramete")
+        self.current_dc_parameters["wavelength"] = (12.3984/value)
+        logging.getLogger("HWR").info("[COLLECT] Setting detector energy")
+        self.detector_hwobj.set_photon_energy(value*1000) # ev
 
     def set_wavelength(self, value):
-        self.energy_hwobj.set_wavelength(value)
-        current_energy = self.energy_hwobj.get_energy()
-        self.detector_hwobj.set_photon_energy(value*1000)
+        logging.getLogger("HWR").info("[COLLECT] Setting beamline wavelength to %s" %value)
+        self.energy_hwobj.startMoveWavelength(value)
+        current_energy = self.energy_hwobj.getCurrentEnergy()
+        self.detector_hwobj.set_photon_energy(current_energy*1000)
 
     @task
     def move_motors(self, motor_position_dict):
