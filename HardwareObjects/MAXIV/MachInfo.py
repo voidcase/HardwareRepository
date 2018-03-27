@@ -133,6 +133,8 @@ class MachInfo(Equipment):
     def getMessage(self):
         return self.message
 
+    def getFillingMode(self):
+	return self.filling_mode
 
 def test():
     import os

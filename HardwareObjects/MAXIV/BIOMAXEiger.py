@@ -105,7 +105,7 @@ class BIOMAXEiger(Equipment):
             self.addChannel({"type": "tango",
                              "name": channel_name,
                              "tangoname": tango_device,
-                             "timeout": 10000,
+                             "timeout": 12000,
                              },
                             channel_name
                             )

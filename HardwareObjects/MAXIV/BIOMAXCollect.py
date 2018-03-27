@@ -69,7 +69,7 @@ class BIOMAXCollect(AbstractCollect, HardwareObject):
         self.ready_event = gevent.event.Event()
         self.diffractometer_hwobj = self.getObjectByRole("diffractometer")
         self.lims_client_hwobj = self.getObjectByRole("lims_client")
-        self.machine_info_hwobj = self.getObjectByRole("machine_info")
+        self.machine_info_hwobj = self.getObjectByRole("mach_info")
         self.energy_hwobj = self.getObjectByRole("energy")
         self.resolution_hwobj = self.getObjectByRole("resolution")
         self.detector_hwobj = self.getObjectByRole("detector")
@@ -92,14 +92,6 @@ class BIOMAXCollect(AbstractCollect, HardwareObject):
         # todo
         # self.fast_shutter_hwobj = self.getObjectByRole("fast_shutter")
         # self.cryo_stream_hwobj = self.getObjectByRole("cryo_stream")
-
-        undulators = []
-        # todo
-        try:
-            for undulator in self["undulators"]:
-                undulators.append(undulator)
-        except:
-            pass
 
         self.exp_type_dict = {'Mesh': 'Mesh', 'Helical': 'Helical'}
         try:
@@ -129,16 +121,23 @@ class BIOMAXCollect(AbstractCollect, HardwareObject):
              detector_model=self.detector_hwobj.getProperty("model"),
              detector_px=pix_x,
              detector_py=pix_y,
-             undulators=undulators,
+             undulators=self.getProperty('undulator'),
              focusing_optic=self.getProperty('focusing_optic'),
              monochromator_type=self.getProperty('monochromator'),
              beam_divergence_vertical=self.beam_info_hwobj.get_beam_divergence_hor(),
              beam_divergence_horizontal=self.beam_info_hwobj.get_beam_divergence_ver(),
              polarisation=self.getProperty('polarisation'),
              input_files_server=self.getProperty("input_files_server"))
+	
+	self.addChannel({"type": "tango",
+                             "name": 'undulator_gap',
+                             "tangoname": self.getProperty('undulator_gap'),
+                             "timeout": 10000,
+                             },
+                            'Position'
+                            )
 
         """ to add """
-        # self.chan_undulator_gap = self.getChannelObject('UndulatorGap')
         # self.chan_machine_current = self.getChannelObject("MachineCurrent")
 
         self.emit("collectReady", (True, ))
@@ -294,7 +293,7 @@ class BIOMAXCollect(AbstractCollect, HardwareObject):
 	
         self.triggers_to_collect = self.prepare_triggers_to_collect()
 
-        log.info("Collection: Updating data collection in LIMS")
+        logging.getLogger("HWR").info("Collection: Updating data collection in LIMS with data: %s" %self.current_dc_parameters)
         self.update_data_collection_in_lims()
         try:
             self.prepare_detector()
@@ -824,7 +823,7 @@ class BIOMAXCollect(AbstractCollect, HardwareObject):
     def set_energy(self, value):
         logging.getLogger("HWR").info("[COLLECT] Setting beamline energy to %s" %value)
         self.energy_hwobj.startMoveEnergy(value) # keV
-        logging.getLogger("HWR").info("[COLLECT] Updating wavelength paramete")
+        logging.getLogger("HWR").info("[COLLECT] Updating wavelength parameter to %s" %(12.3984/value))
         self.current_dc_parameters["wavelength"] = (12.3984/value)
         logging.getLogger("HWR").info("[COLLECT] Setting detector energy")
         self.detector_hwobj.set_photon_energy(value*1000) # ev
@@ -1013,27 +1012,34 @@ class BIOMAXCollect(AbstractCollect, HardwareObject):
             self.transmission_hwobj.set_value(float(value), True)
 	except Exception as ex:
 	    raise Exception('cannot set transmission', ex)
-
+    '''
     def get_undulators_gaps(self):
         """
         Descript. :
         """
-        # todo
-        return None
-
+	try:
+	    chan = self.getChannelObject('undulator_gap')
+            return chan.getValue()
+	except:
+	    return None
+    '''
     def get_slit_gaps(self):
         """
         Descript. :
         """
-        # todo
-        return None, None
+	try:
+            return self.beam_info_hwobj.get_beam_size()
+	except:
+	    return None
 
     def get_machine_current(self):
         """
         Descript. :
         """
-        # todo
-        return 0
+	try:
+            return self.machine_info_hwobj.getCurrent()
+	except:
+	    return None
 
     def get_machine_message(self):
         """
@@ -1041,6 +1047,15 @@ class BIOMAXCollect(AbstractCollect, HardwareObject):
         """
         # todo
         return ""
+
+    def get_machine_fill_mode(self):
+        """
+        Descript. : 
+        """
+	try:
+            return self.machine_info_hwobj.getFillingMode()
+	except:
+	    return ''
 
     def get_flux(self):
         """

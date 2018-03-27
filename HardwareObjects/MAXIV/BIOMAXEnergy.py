@@ -67,7 +67,6 @@ class BIOMAXEnergy(Energy.Energy):
         current_en = self.getCurrentEnergy()
         if current_en:
             curr_wave =  (12.3984/current_en)
-            logging.getLogger('user_level_log').debug("Get current wavelength %s" %curr_wave)
             return curr_wave
         return None
 
@@ -78,7 +77,6 @@ class BIOMAXEnergy(Energy.Energy):
             try:
                 self.en_lims = self.energy_motor.getLimits()
 		self.en_lims = (float(self.en_lims[0])/1000, float(self.en_lims[1])/1000)
-        	logging.getLogger("HWR").debug("Get energy limits: %s" %str(self.en_lims))
                 return self.en_lims 
             except:
                 logging.getLogger("HWR").exception("EnergyHO: could not read energy motor limits")
