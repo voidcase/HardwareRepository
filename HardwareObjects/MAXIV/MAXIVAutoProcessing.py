@@ -102,16 +102,20 @@ class MAXIVAutoProcessing(HardwareObject):
                     residues = 200
                     anomalous = False
                     cell = "0,0,0,0,0,0"
+                    space_group = None
 		    print 'Module: ', module, '>> Will execute: ', will_execute
 		    print 'input_filename   ', input_filename
 		    try:
                         if module == 'ednaproc' and will_execute:
                             from ednaProcLauncher import EdnaProcLauncher
-                            mod =  EdnaProcLauncher(path, mode, dataCollectionId, residues, anomalous, cell, None)
+                            mod =  EdnaProcLauncher(path, mode, dataCollectionId, residues, anomalous, cell, space_group)
 
                         elif module == 'autoproc' and will_execute:
                             from autoProcLauncher import AutoProcLauncher
-                            mod = AutoProcLauncher(path, mode, dataCollectionId, residues, anomalous, cell, None)
+                            mod = AutoProcLauncher(path, mode, dataCollectionId, residues, anomalous, cell, space_group)
+			elif module == 'fastdp' and will_execute:
+			    from fastdpLauncher import fastdpLauncher
+                            mod = fastdpLauncher(path, mode, dataCollectionId, residues, anomalous, cell, space_group)
 		    except Exception as ex:
 			print ex
                 if process_event == 'image':
@@ -129,7 +133,6 @@ class MAXIVAutoProcessing(HardwareObject):
 		    except Exception as ex:
                         logging.getLogger("HWR").error("[MAXIVAutoprocessing] Module %s  execution error." % module)
 			print module, ex
-
     def autoproc_done(self, current_autoproc):
         """
         Descript. :
