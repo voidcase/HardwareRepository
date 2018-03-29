@@ -124,7 +124,7 @@ class fastdpLauncher:
         else:
             spacegroupFragment = ""
 
-        if self.cell is not None:
+        if self.cell is not None and self.cell!="0,0,0,0,0,0":
             cellFragment = """  <cell>
             <value>{0}</value>
             </cell>""".format(self.cell)
