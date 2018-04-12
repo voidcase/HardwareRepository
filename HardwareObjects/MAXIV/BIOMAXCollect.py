@@ -1099,47 +1099,90 @@ class BIOMAXCollect(AbstractCollect, HardwareObject):
             time.sleep(frequency)
 
     def enable_datacatalog(self, enable):
-	self.datacatalog_enabled = enable
+        self.datacatalog_enabled = enable
 
     def store_datacollection_datacatalog(self):
-	collection = self.current_dc_parameters
-	proposal_code = self.session_hwobj.proposal_code
-	proposal_number = self.session_hwobj.proposal_number
-	
-	proposal_info = self.lims_client_hwobj.get_proposal(proposal_code, proposal_number)
-	# session info is missing!
-	sessionId= collection.get('sessionId', None)
-	if sessionId:
+        """
+        Send the data collection parameters to the data catalog. In the form:
+            msg = {
+                'uuid': 'f5ed1b14-3e70-43ce-b561-8902e5e31422',
+                'proposal': '20170251',
+                'beamline': 'AnyMAX',
+                'directory': '/data/visitors/anybeam/20170251/path/to/file/',
+
+                'files': [
+                'datafile_00001.h5',
+                'datafile_00002.h5',
+                'datafile_00003.h5',
+                'datafile_master.h5',
+                ],
+
+               # Free form, whatever is relevant to the experiment
+               'scientific': {
+                   'some_energy': '4.2 eV',
+                   'some_distance': '42 um',
+                   'some_time': '300 ms',
+                },
+            }
+        """
+        msg = {}
+        files = []
+        collection = self.current_dc_parameters
+        proposal_code = self.session_hwobj.proposal_code
+        proposal_number = self.session_hwobj.proposal_number
+
+        proposal_info = self.lims_client_hwobj.get_proposal(proposal_code, proposal_number)
+        # session info is missing!
+        sessionId= collection.get('sessionId', None)
+        if sessionId:
             session_info = self.lims_client_hwobj.get_session(sessionId)
-	    proposal_info['Session'] = session_info	
+            proposal_info['Session'] = session_info	
         else:
-            return # JN tmp solution, with commissioning, there is no proposal ID, no session
-	collection['proposalInfo'] = proposal_info
-	collection['uuid'] = str(uuid.uuid4())	
-	logging.getLogger("HWR").info("[HWR] Sending collection info to the data catalog: %s" %collection)
-	# help with serialization
-	try:
-	    collection['proposalInfo']['Session']['lastUpdate']= collection['proposalInfo']['Session']['lastUpdate'].isoformat()
-	    collection['proposalInfo']['Session']['timeStamp']= collection['proposalInfo']['Session']['timeStamp'].isoformat()
-	except:
-	    if 'Session' in collect['proposalInfo'].keys():
-	        collection['proposalInfo']['Session']['lastUpdate'] = ''
-	        collection['proposalInfo']['Session']['timeStamp'] = ''
-	try:
-	    num_files = int(math.ceil(collection['oscillation_sequence'][0]['number_of_images'] / 100))
-	except Exception as ex:
+            # We do not send this info when the commissioning is the fake proposal 
+            return
+        
+        collection['proposalInfo'] = proposal_info
+        
+        # the following lines are fot helping with serialization
+        try:
+            collection['proposalInfo']['Session']['lastUpdate']= collection['proposalInfo']['Session']['lastUpdate'].isoformat()
+            collection['proposalInfo']['Session']['timeStamp']= collection['proposalInfo']['Session']['timeStamp'].isoformat()
+        except:
+            if 'Session' in collect['proposalInfo'].keys():
+                collection['proposalInfo']['Session']['lastUpdate'] = ''
+                collection['proposalInfo']['Session']['timeStamp'] = ''
+        try:
+            # Default of 100 images per h5 file. TODO: move to xml config
+            num_files = int(math.ceil(collection['oscillation_sequence'][0]['number_of_images'] / 100.0))
+        except Exception as ex:
             logging.getLogger("HWR").error("[HWR] Error during data catalog: %s" %ex)
 
-	collection['fileinfo']['num_files'] = num_files #num_images per files
-	proxies = {
-	    "http": None,
-	    "https": None
-	    }
-	
-	if self.datacatalog_url:
-       	    try:
-	        requests.post(self.datacatalog_url, data=json.dumps(collection), proxies=proxies)
-	    except Exception as ex:
-	        logging.getLogger("HWR").error("[HWR] Error sending collection info to the data catalog: %s %s" % (self.datacatalog_url, ex))
-	else:
-	    logging.getLogger("HWR").error("[HWR] Error sending collection info to the data catalog: No datacatalog URL specified")
+        collection['fileinfo']['num_files'] = num_files
+        proxies = {
+            "http": None,
+            "https": None
+        }
+
+        files.append(collection.get('fileinfo').get('filename')) # this is the master file
+        template = collection.get('fileinfo').get('template')
+        directory = collection.get('fileinfo').get('directory')
+        for num in range(1, num_files + 1):
+            files.append(os.path.join(directory, template % num))
+        # now we build the dict as hannes requested
+
+        msg['proposal'] = proposal_number
+        msg['uuid'] = str(uuid.uuid4())
+        msg['beamline'] = proposal_info.get('Session', {}).get('beamlineName', '')
+        msg['directory'] = directory
+        msg['files'] = files
+        msg['scientific'] = collection
+
+        logging.getLogger("HWR").info("[HWR] Sending collection info to the data catalog: %s" %msg)
+
+        if self.datacatalog_url:
+            try:
+                requests.post(self.datacatalog_url, data=json.dumps(msg), proxies=proxies)
+            except Exception as ex:
+                logging.getLogger("HWR").error("[HWR] Error sending collection info to the data catalog: %s %s" % (self.datacatalog_url, ex))
+        else:
+            logging.getLogger("HWR").error("[HWR] Error sending collection info to the data catalog: No datacatalog URL specified")
