@@ -61,6 +61,7 @@ class BIOMAXCollect(AbstractCollect, HardwareObject):
 
         self.datacatalog_enabled = True
         self.datacatalog_url = None
+        self.collection_uuid = ""
 
     def init(self):
         """
@@ -295,6 +296,16 @@ class BIOMAXCollect(AbstractCollect, HardwareObject):
 
         logging.getLogger("HWR").info("Collection: Updating data collection in LIMS with data: %s" %self.current_dc_parameters)
         self.update_data_collection_in_lims()
+
+        # Generate and set a unique id, used in the data catalog and the detector must know it
+        self.collection_uuid = str(uuid.uuid4())
+        logging.getLogger("HWR").info("[COLLECT] Generating UUID: %s" %self.collection_uuid)
+
+        try:
+            self.detector_hwobj.set_collection_uuid(self.collection_uuid)
+        except Exception as ex:
+            logging.getLogger("HWR").warning("[COLLECT] Error setting UUID in the detector: %s" % ex)
+
         try:
             self.prepare_detector()
         except Exception as ex:
@@ -1156,7 +1167,7 @@ class BIOMAXCollect(AbstractCollect, HardwareObject):
         # now we build the dict as hannes requested
 
         msg['proposal'] = proposal_number
-        msg['uuid'] = str(uuid.uuid4())
+        msg['uuid'] = self.collection_uuid
         msg['beamline'] = proposal_info.get('Session', {}).get('beamlineName', '')
         msg['directory'] = directory
         msg['files'] = files

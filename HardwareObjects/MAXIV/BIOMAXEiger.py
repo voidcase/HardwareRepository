@@ -74,7 +74,7 @@ class BIOMAXEiger(Equipment):
                      'YPixelSize', 'NbTriggersMin', 'CountTimeInte', 'DownloadDirectory',
                      'FilesInBuffer', 'Error', 'BeamCenterX', 'BeamCenterY', 'DetectorDistance',
                      'OmegaIncrement', 'OmegaStart', 'Compression', 'RoiMode', 'State', "Status",
-                     'XPixelsDetector', 'YPixelsDetector'
+                     'XPixelsDetector', 'YPixelsDetector', 'CollectionUUID'
                      )
 
         fw_list = ('FilenamePattern', 'ImagesPerFile', 'BufferFree', 'FileWriterState', 'ImageNbStart', 'Mode')
@@ -360,6 +360,12 @@ class BIOMAXEiger(Equipment):
         Eengery, in eV
         """
         self.set_value("EnergyThreshold", threshold)
+
+    def set_collection_uuid(self, col_uuid):
+        self.set_value("CollectionUUID", col_uuid)
+
+    def get_collection_uuid(self):
+        return self.get_value("CollectionUUID")
 
     #  SET VALUES END
 
