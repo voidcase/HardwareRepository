@@ -677,26 +677,11 @@ class BIOMAXCollect(AbstractCollect, HardwareObject):
         """
         Descript. :
         """
-        # todo
-        fast_dp_dir = os.path.join(params_dict["auto_dir"],"fast_dp")
         biomax_pipeline_dir = os.path.join(params_dict["auto_dir"],"biomax_pipeline")
-        #autoPROC_dir = os.path.join(params_dict["auto_dir"],"autoPROC")
         
-	self.create_directories(fast_dp_dir) #, biomax_pipeline_dir)#, autoPROC_dir)
         
 	logging.getLogger("HWR").info("[COLLECT] triggering auto processing, parameters: %s" %params_dict)
 	logging.getLogger("HWR").info("[COLLECT] triggering auto processing, self.current_dc_parameters: %s" % self.current_dc_parameters)
-
-	logging.getLogger("HWR").info("[COLLECT] Launching fast_dp")
-        os.system("cd %s;/mxn/groups/biomax/wmxsoft/scripts_mxcube/fast_dp.sh %s &" \
-            % (fast_dp_dir, params_dict['fileinfo']['filename']))
-        
-	#logging.getLogger("HWR").info("[COLLECT] Launching biomax_pipeline")
-        #os.system("cd %s;/mxn/groups/biomax/wmxsoft/scripts_mxcube/biomax_pipeline.sh %s &" \
-        #    % (biomax_pipeline_dir, params_dict['fileinfo']['filename']))
-        #os.system("cd %s;/mxn/groups/biomax/wmxsoft/scripts_mxcube/autoPROC.sh %s &"  \
-        #    % (autoPROC_dir, params_dict['fileinfo']['filename']))
-        #return
 
 	logging.getLogger("HWR").info("[COLLECT] Launching MAXIV Autoprocessing")
         if self.autoprocessing_hwobj is not None:
