@@ -292,6 +292,18 @@ class BIOMAXMD3(GenericDiffractometer):
             self.reference_pos = (-10, pos)
         self.emit('omegaReferenceChanged', (self.reference_pos,))
 
+    def move_to_motors_positions(self, motors_positions, wait = False):
+        """
+        """
+	try:
+	    motors_positions.pop('zoom')
+	except:
+	    pass
+        self.emit_progress_message("Moving to motors positions...")
+        self.move_to_motors_positions_procedure = gevent.spawn(\
+             self.move_motors, motors_positions)
+        self.move_to_motors_positions_procedure.link(self.move_motors_done)
+
     def motor_positions_to_screen(self, centred_positions_dict):
         """
         Descript. :
