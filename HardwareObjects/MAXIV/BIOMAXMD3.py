@@ -292,6 +292,18 @@ class BIOMAXMD3(GenericDiffractometer):
             self.reference_pos = (-10, pos)
         self.emit('omegaReferenceChanged', (self.reference_pos,))
 
+    def move_to_motors_positions(self, motors_positions, wait = False):
+        """
+        """
+	try:
+	    motors_positions.pop('zoom')
+	except:
+	    pass
+        self.emit_progress_message("Moving to motors positions...")
+        self.move_to_motors_positions_procedure = gevent.spawn(\
+             self.move_motors, motors_positions)
+        self.move_to_motors_positions_procedure.link(self.move_motors_done)
+
     def motor_positions_to_screen(self, centred_positions_dict):
         """
         Descript. :
@@ -443,7 +455,12 @@ class BIOMAXMD3(GenericDiffractometer):
                     current_positions[motor] = self.motor_hwobj_dict[motor].getPosition()
                 except:
 		    pass
-        if self.is_ready():
+	try:
+	    self.wait_device_ready(10)
+	except Exception as ex:
+            logging.getLogger('HWR').error('[BIOMAXMD3] Cannot change phase to %s, timeout waiting for MD3 ready, %s' %(phase, ex))
+	    logging.getLogger('user_log').error('[MD3] Cannot change phase to %s, timeout waiting for MD3 ready' %phase)
+	else:
             self.command_dict["startSetPhase"](phase)
             if keep_position:
                 self.move_sync_motors(current_positions)
@@ -451,10 +468,6 @@ class BIOMAXMD3(GenericDiffractometer):
                 if not timeout:
                     timeout = 40
                 self.wait_device_ready(timeout)
-        else:
-            print "moveToPhase - Ready is: ", self.is_ready()
-
-
 
     # def move_sync_motors(self, motors_dict, wait=False, timeout=None):
     def move_sync_motors(self, motors_dict, wait=True, timeout=30):

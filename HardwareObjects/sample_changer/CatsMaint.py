@@ -590,7 +590,7 @@ class CatsMaint(Equipment):
                raise Exception ("Cannot detect type of TOOL in Cats. Command ignored")
 
         if cmdname == "soak":
-           if tool in [TOOL_DOUBLE, TOOL_UNIPUCK]:
+           if tool in [TOOL_DOUBLE_GRIPPER, TOOL_UNIPUCK]:
                args = [str(tool), str(lid)]
            else:
                raise Exception ("Can SOAK only when UNIPUCK tool is mounted")
