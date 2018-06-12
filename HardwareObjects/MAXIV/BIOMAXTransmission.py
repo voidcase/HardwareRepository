@@ -44,13 +44,19 @@ class BIOMAXTransmission(Equipment):
         return abs(curr_pos - setpoint) < 5
 
     def set_value(self, value, wait=False):
-        if value < self.limits[0] or value > self.limits[1]:
-            raise Exception('Transmssion out of limits.')
-        self.transmission_motor.move(value)
-        if wait:
-            with gevent.Timeout(30, Exception("Timeout waiting for device ready")):
-                while not self.setpoint_reached(value):
+    	if value < self.limits[0] or value > self.limits[1]:
+    	    raise Exception('Transmssion out of limits.')
+
+        with gevent.Timeout(10, Exception("Timeout waiting for device to be stopped")):
+                while self.transmission_motor.is_moving()::
                     gevent.sleep(0.1)
+
+    	self.transmission_motor.move(value)
+
+    	if wait:
+    	    with gevent.Timeout(30, Exception("Timeout waiting for device ready")):
+    	        while not self.setpoint_reached(value):
+    	            gevent.sleep(0.1)
 
         self._update()
 
