@@ -63,10 +63,10 @@ class MaxIVSession(Session):
                                                            'city': 'Lund',
                                                            'laboratoryId': 312171,
                                                            'name': 'Lund University'},
-                                            'Person': {'familyName': 'Commissioning',
-                                                       'givenName': 'Commi',
+                                            'Person': {'familyName': 'commissioning',
+                                                       'givenName': '',
                                                        'laboratoryId': 312171,
-                                                       'login': 'staff',
+                                                       'login': '',
                                                        'personId': 0},
                                             'Proposal': {'code': 'MX',
                                                          'number': time.strftime("%Y"),
@@ -156,7 +156,7 @@ class MaxIVSession(Session):
         # this checks that the beamline data path has been properly created
         # e.g. /data/visitors/biomax
         try:
-             self.storage = storage.Storage(self.get_user_category(self.login), self.endstation_name)
+            self.storage = storage.Storage(self.get_user_category(self.login), self.endstation_name)
         except Exception as ex:
             print ex
             # this creates the path for the data and ensures proper permissions.
@@ -165,7 +165,6 @@ class MaxIVSession(Session):
             group = self.beamline_name.lower()
         else:
             group = self.storage.get_proposal_group(self.proposal_number)
-        
         try:
             self.storage.create_path(self.proposal_number,
                                       group,

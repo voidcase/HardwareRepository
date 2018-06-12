@@ -87,9 +87,8 @@ class BIOMAXCollect(AbstractCollect, HardwareObject):
             logging.getLogger("HWR").info("[COLLECT] Datacatalog enabled, url: %s" % self.datacatalog_url)
         else:
             logging.getLogger("HWR").warning("[COLLECT] Datacatalog not enabled")
-        
+       
         self.safety_shutter_hwobj = self.getObjectByRole("safety_shutter")
-        
         # todo
         # self.fast_shutter_hwobj = self.getObjectByRole("fast_shutter")
         # self.cryo_stream_hwobj = self.getObjectByRole("cryo_stream")
@@ -130,7 +129,7 @@ class BIOMAXCollect(AbstractCollect, HardwareObject):
              polarisation=self.getProperty('polarisation'),
              input_files_server=self.getProperty("input_files_server"))
 	
-	self.addChannel({"type": "tango",
+        self.addChannel({"type": "tango",
                              "name": 'undulator_gap',
                              "tangoname": self.getProperty('undulator_gap'),
                              "timeout": 10000,
@@ -286,12 +285,12 @@ class BIOMAXCollect(AbstractCollect, HardwareObject):
             try:
                 log.info("Collection: Moving detector to %f",
                 self.current_dc_parameters["detdistance"])
-            	self.move_detector(self.current_dc_parameters["detdistance"])
+                self.move_detector(self.current_dc_parameters["detdistance"])
             except Exception as ex:
                 log.error('Collection: cannot set detector distance.')
                 logging.getLogger("HWR").error("[COLLECT] Error setting detector distance: %s" % ex)
                 raise Exception("[COLLECT] Error setting detector distance: %s" % ex)
-	
+
         self.triggers_to_collect = self.prepare_triggers_to_collect()
 
         logging.getLogger("HWR").info("Collection: Updating data collection in LIMS with data: %s" %self.current_dc_parameters)
@@ -484,19 +483,18 @@ class BIOMAXCollect(AbstractCollect, HardwareObject):
         self.ready_event.set()
         self.update_data_collection_in_lims()
 
-	logging.getLogger("HWR").debug("[COLLECT] COLLECTION FINISHED, self.current_dc_parameters: %s" % self.current_dc_parameters)
+        logging.getLogger("HWR").debug("[COLLECT] COLLECTION FINISHED, self.current_dc_parameters: %s" % self.current_dc_parameters)
         try:
-	    logging.getLogger("HWR").info("[BIOMAXCOLLECT] Going to generate XDS input files")
+            logging.getLogger("HWR").info("[BIOMAXCOLLECT] Going to generate XDS input files")
             # generate XDS.INP only in raw/process
-#            data_path = os.path.join("../../", os.path.basename(self.current_dc_parameters['fileinfo']['filename']))
-	    data_path = self.current_dc_parameters['fileinfo']['filename']
-	    logging.getLogger("HWR").info("[BIOMAXCOLLECT] DATA file: %s" % data_path)
-	    logging.getLogger("HWR").info("[BIOMAXCOLLECT] XDS file: %s" % self.current_dc_parameters["xds_dir"])
-	    # Wait for the master file
-	    self.wait_for_file_copied(data_path)
+            data_path = self.current_dc_parameters['fileinfo']['filename']
+            logging.getLogger("HWR").info("[BIOMAXCOLLECT] DATA file: %s" % data_path)
+            logging.getLogger("HWR").info("[BIOMAXCOLLECT] XDS file: %s" % self.current_dc_parameters["xds_dir"])
+            # Wait for the master file
+            self.wait_for_file_copied(data_path)
             os.system("cd %s;/mxn/groups/biomax/wmxsoft/scripts_mxcube/generate_xds_inp.sh %s &" \
                 % (self.current_dc_parameters["xds_dir"],data_path))
-	    logging.getLogger("HWR").info("[BIOMAXCOLLECT] AUTO file: %s" % self.current_dc_parameters["auto_dir"])
+            logging.getLogger("HWR").info("[BIOMAXCOLLECT] AUTO file: %s" % self.current_dc_parameters["auto_dir"])
             os.system("cd %s;/mxn/groups/biomax/wmxsoft/scripts_mxcube/generate_xds_inp_auto.sh %s &" \
                 % (self.current_dc_parameters["auto_dir"],data_path))
             if (self.current_dc_parameters['experiment_type'] in ('OSC', 'Helical') and
@@ -506,26 +504,25 @@ class BIOMAXCollect(AbstractCollect, HardwareObject):
                 self.trigger_auto_processing("after", self.current_dc_parameters, 0)
     	except Exception as ex:
             logging.getLogger("HWR").error("[COLLECT] Error creating XDS files, %s" %ex)
-    	    print ex	
 
     	# we store the first and the last images, TODO: every 45 degree
         logging.getLogger("HWR").info("Storing images in lims, frame number: 1")
-    	try:
-    	    self.store_image_in_lims(1)
-    	    self.generate_and_copy_thumbnails(self.current_dc_parameters['fileinfo']['filename'], 1)
-    	except Exception as ex:
-    	    print ex
-    	
-    	last_frame = self.current_dc_parameters['oscillation_sequence'][0]['number_of_images']         
-    	if last_frame > 1:             
-    	    logging.getLogger("HWR").info("Storing images in lims, frame number: %d" %last_frame)
-    	    try:
-    	    	self.store_image_in_lims(last_frame) 
-    	        self.generate_and_copy_thumbnails(self.current_dc_parameters['fileinfo']['filename'], last_frame)
-    	    except Exception as ex:
-    		print ex
-	
-	if self.datacatalog_enabled:
+        try:
+            self.store_image_in_lims(1)
+            self.generate_and_copy_thumbnails(self.current_dc_parameters['fileinfo']['filename'], 1)
+        except Exception as ex:
+            print ex
+
+        last_frame = self.current_dc_parameters['oscillation_sequence'][0]['number_of_images']         
+        if last_frame > 1:             
+            logging.getLogger("HWR").info("Storing images in lims, frame number: %d" %last_frame)
+            try:
+            	self.store_image_in_lims(last_frame) 
+                self.generate_and_copy_thumbnails(self.current_dc_parameters['fileinfo']['filename'], last_frame)
+            except Exception as ex:
+        	print ex
+
+        if self.datacatalog_enabled:
             self.store_datacollection_datacatalog()
 		
     def store_image_in_lims_by_frame_num(self, frame, motor_position_id=None):
@@ -689,12 +686,11 @@ class BIOMAXCollect(AbstractCollect, HardwareObject):
         Descript. :
         """
         biomax_pipeline_dir = os.path.join(params_dict["auto_dir"],"biomax_pipeline")
-        
-        
-	logging.getLogger("HWR").info("[COLLECT] triggering auto processing, parameters: %s" %params_dict)
-	logging.getLogger("HWR").info("[COLLECT] triggering auto processing, self.current_dc_parameters: %s" % self.current_dc_parameters)
 
-	logging.getLogger("HWR").info("[COLLECT] Launching MAXIV Autoprocessing")
+        logging.getLogger("HWR").info("[COLLECT] triggering auto processing, parameters: %s" %params_dict)
+        logging.getLogger("HWR").info("[COLLECT] triggering auto processing, self.current_dc_parameters: %s" % self.current_dc_parameters)
+
+        logging.getLogger("HWR").info("[COLLECT] Launching MAXIV Autoprocessing")
         if self.autoprocessing_hwobj is not None:
             self.autoprocessing_hwobj.execute_autoprocessing(process_event,
                                                              self.current_dc_parameters,
@@ -1004,10 +1000,11 @@ class BIOMAXCollect(AbstractCollect, HardwareObject):
         """
         Descript. :
         """
-	try:
+        try:
             self.transmission_hwobj.set_value(float(value), True)
-	except Exception as ex:
-	    raise Exception('cannot set transmission', ex)
+        except Exception as ex:
+            raise Exception('cannot set transmission', ex)
+
     '''
     def get_undulators_gaps(self):
         """
@@ -1019,6 +1016,7 @@ class BIOMAXCollect(AbstractCollect, HardwareObject):
 	except:
 	    return None
     '''
+
     def get_slit_gaps(self):
         """
         Descript. :

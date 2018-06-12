@@ -268,6 +268,7 @@ class Shape(object):
         self.cp_list = []
         self.name = ""
         self.state = "SAVED"
+        self.label = ""
         self.screen_coord = screen_coord
         self.selected = False
         self.refs = []
@@ -280,6 +281,9 @@ class Shape(object):
         :rtype: List of CentredPosition objects.
         """
         return self.cp_list
+
+    def get_centred_position(self):
+        return self.get_centred_positions()[0]
 
     def select(self):
         self.selected = True
@@ -301,7 +305,7 @@ class Shape(object):
 
     def set_id(self, id_num):
         self.id = self.t + "%s" % id_num
-        self.name = self.id
+        self.name = self.label + "-%s" % id_num
 
     def move_to_mpos(self, mpos_list, screen_coord=[]):
         self.cp_list = []
@@ -340,10 +344,8 @@ class Point(Shape):
         Shape.__init__(self, mpos_list, screen_coord)
         Point.SHAPE_COUNT += 1
         self.t = "P"
+        self.label = "Point"
         self.set_id(Point.SHAPE_COUNT)
-
-    def get_centred_position(self):
-        return self.cp_list[0]
 
     def mpos(self):
         return self.cp_list[0].as_dict()
@@ -366,6 +368,7 @@ class Line(Shape):
         Shape.__init__(self, mpos_list, screen_coord)
         Line.SHAPE_COUNT += 1
         self.t = "L"
+        self.label = "Line"
         self.set_id(Line.SHAPE_COUNT)
 
     def get_centred_positions(self):
@@ -399,6 +402,10 @@ class Grid(Shape):
         self.result = []
         self.pixels_per_mm = [1, 1]
         self.beam_pos = [1, 1]
+        self.beam_width = 0
+        self.beam_height = 0
+
+        self.set_id(Grid.SHAPE_COUNT)
 
     def get_centred_position(self):
         return self.cp_list[1]
@@ -437,8 +444,8 @@ class Grid(Shape):
         d["steps_y"] = d["num_rows"]
         d["dx_mm"] = d["width"] / self.pixels_per_mm[0]
         d["dy_mm"] = d["height"] / self.pixels_per_mm[1]
-        d["beam_width"] = d["cell_width"]
-        d["beam_height"] = d["cell_height"]
+        d["beam_width"] = d["beam_width"]
+        d["beam_height"] = d["beam_height"]
         d["angle"] = 0
 
         return d    

@@ -49,15 +49,14 @@ class MachInfo(Equipment):
     def __init__(self, *args):
         Equipment.__init__(self, *args)
         default_current = 0
-	default_lifetime = 0
-	default_message = ""
-	default_topup_remaining = 0
+        default_lifetime = 0
+        default_message = ""
+        default_topup_remaining = 0
         self.current = self.default_current
         self.lifetime = self.default_lifetime
         self.message = self.default_message
-
-	self.mach_info_channel = None
-	self.mach_curr_channel = None
+        self.mach_info_channel = None
+        self.mach_curr_channel = None
 
     def init(self):
         try:
@@ -71,18 +70,18 @@ class MachInfo(Equipment):
 	
         try:
             #self.curr_info_channel =  self.getChannelObject("curr_info")
-	    channel_current = self.getProperty('current')
-	    self.curr_info_channel = PyTango.DeviceProxy(channel_current)
-	    # why twice??
-	    # why hwr channel does not work?? why??
-	    if self.curr_info_channel is None:
-	        self.curr_info_channel = PyTango.DeviceProxy(channel_current)
- 	    curr = self.curr_info_channel.Current
-	    if curr < 0:
-		self.current = 0.00
-	    else:
-	    	self.current = "{:.2f}".format(curr * 1000)
-	    self.lifetime = float("{:.2f}".format(self.curr_info_channel.Lifetime / 3600))
+            channel_current = self.getProperty('current')
+            self.curr_info_channel = PyTango.DeviceProxy(channel_current)
+            # why twice??
+            # why hwr channel does not work?? why??
+            if self.curr_info_channel is None:
+                self.curr_info_channel = PyTango.DeviceProxy(channel_current)
+                curr = self.curr_info_channel.Current
+            if curr < 0:
+                self.current = 0.00
+            else:
+            	self.current = "{:.2f}".format(curr * 1000)
+            self.lifetime = float("{:.2f}".format(self.curr_info_channel.Lifetime / 3600))
         except Exception as ex:
             logging.getLogger("HWR").warning('Error initializing current info channel')
 
@@ -96,7 +95,7 @@ class MachInfo(Equipment):
 
         while True:
             gevent.sleep(2)
-	    self.message = self.mach_info_channel.OperatorMessage
+            self.message = self.mach_info_channel.OperatorMessage
             self.message += '\n' + self.mach_info_channel.R3NextInjection
             curr = self.curr_info_channel.Current
             if curr < 0:
@@ -134,7 +133,7 @@ class MachInfo(Equipment):
         return self.message
 
     def getFillingMode(self):
-	return self.filling_mode
+        return self.filling_mode
 
 def test():
     import os

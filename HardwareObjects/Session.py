@@ -279,3 +279,8 @@ class Session(HardwareObject):
         self.proposal_code = None
         self.proposal_number = None
         
+    def get_archive_directory(self):
+        """
+        Returns (str): current archive directory
+        """
+        return queue_model_objects.PathTemplate.get_archive_directory()

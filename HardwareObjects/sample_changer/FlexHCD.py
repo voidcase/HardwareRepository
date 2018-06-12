@@ -5,7 +5,7 @@ import cPickle
 import base64
 import logging
 
-class Pin(Sample):        
+class Pin(Sample):
     def __init__(self,basket,cell_no,basket_no,sample_no):
         super(Pin, self).__init__(basket, Pin.getSampleAddress(cell_no,basket_no,sample_no), True)
         self._setHolderLength(22.0)
@@ -29,14 +29,14 @@ class Pin(Sample):
 
 
 class Basket(Container):
-    __TYPE__ = "Puck"    
+    __TYPE__ = "Puck"
     def __init__(self,container,cell_no,basket_no, unipuck=False):
         super(Basket, self).__init__(self.__TYPE__,container,Basket.getBasketAddress(cell_no,basket_no),True)
         for i in range(16 if unipuck else 10):
             slot = Pin(self,cell_no,basket_no,i+1)
             self._addComponent(slot)
         self.present = True
-                            
+
     @staticmethod
     def getBasketAddress(cell_number,basket_number):
         return str(cell_number)+":"+str(basket_number)
@@ -48,7 +48,7 @@ class Basket(Container):
         return self.getContainer()
 
     def clearInfo(self):
-	self.getContainer()._reset_basket_info(self.getIndex()+1)
+        self.getContainer()._reset_basket_info(self.getIndex()+1)
         self.getContainer()._triggerInfoChangedEvent()
 
 
@@ -63,7 +63,7 @@ class Cell(Container):
       else:
         for i in range(3):
           self._addComponent(Basket(self,number,i+1, unipuck=True))
-       
+
     @staticmethod
     def getCellAddress(cell_number):
       return str(cell_number)
@@ -82,10 +82,7 @@ class FlexHCD(SampleChanger):
         super(FlexHCD, self).__init__(self.__TYPE__, True, *args, **kwargs)
 
     def init(self):
-        try:
-            sc3_pucks = self.getProperty("sc3_pucks")
-        except Exception:
-            sc3_pucks = True
+        sc3_pucks = self.getProperty("sc3_pucks", True)
 
         for i in range(8):
             cell = Cell(self, i+1, sc3_pucks)
@@ -117,7 +114,7 @@ class FlexHCD(SampleChanger):
     def getBasketList(self):
         basket_list = []
         for cell in self.getComponents():
-            for basket in cell.getComponents(): 
+            for basket in cell.getComponents():
                 if isinstance(basket, Basket):
                     basket_list.append(basket)
         return basket_list
@@ -132,21 +129,23 @@ class FlexHCD(SampleChanger):
 
     def _doScan(self, component, recursive=True, saved={"barcodes":None}):
         return
- 
+
     def _execute_cmd(self, cmd, *args, **kwargs):
         timeout = kwargs.pop('timeout', None)
         if args:
             cmd_str = 'flex.%s(%s)' % (cmd, ",".join(map(repr, args)))
         else:
             cmd_str = 'flex.%s()' % cmd
+
         cmd_id = self.robot.eval(cmd_str)
+
         if not cmd_id:
             cmd_id = self.robot.eval(cmd_str)
         with gevent.Timeout(timeout, RuntimeError("Timeout while executing %s" % repr(cmd_str))):
           while True:
             if self.robot.is_finished(cmd_id):
-              break 
-            gevent.sleep(0.2)  
+              break
+            gevent.sleep(0.2)
         res = self.robot.get_result(cmd_id)
         if res:
           res = cPickle.loads(base64.decodestring(res))
@@ -155,14 +154,14 @@ class FlexHCD(SampleChanger):
           else:
               return res
 
-    def _doSelect(self, component): 
+    def _doSelect(self, component):
         if isinstance(component, Cell):
           cell_pos = component.getIndex()+1
         elif isinstance(component, Basket) or isinstance(component, Pin):
           cell_pos = component.getCellNo()
-        
+
         self._execute_cmd('moveDewar', cell_pos)
-         
+
         self._updateSelection()
 
     @task
@@ -209,11 +208,11 @@ class FlexHCD(SampleChanger):
         finally:
             for msg in self.get_robot_exceptions():
                 logging.getLogger("HWR").error(msg)
-       
+
         if res:
             self.prepareCentring()
         return res
-        
+
     @task
     def unload_sample(self, holderLength, sample_id=None, sample_location=None, successCallback=None, failureCallback=None):
         cell, basket, sample = sample_location
@@ -233,17 +232,15 @@ class FlexHCD(SampleChanger):
                 logging.getLogger("HWR").error(msg)
 
     def get_gripper(self):
-        gripper_type = {1:"UNIPUCK", 3:"SPINE"}
-        tt = self._execute_cmd("get_gripper_type")
-        if tt in gripper_type:
-            return gripper_type[tt]
-        return "?"
+        gripper_type = self._execute_cmd("get_gripper_type")
+        gripper_types = { 3: "FLIPPING", 1: "UNIPUCK" }
+        return gripper_types.get(gripper_type, "?")
 
     @task
     def change_gripper(self):
         self.prepare_load(wait=True)
         self.enable_power()
-        self._execute_cmd("changeGripper") 
+        self._execute_cmd("changeGripper")
 
     @task
     def home(self):
@@ -273,7 +270,7 @@ class FlexHCD(SampleChanger):
               self._setLoadedSample(sample)
               return True
            gevent.sleep(1)
-         
+
         if self._execute_cmd("get_loaded_sample") == (sample.getCellNo(), sample.getBasketNo(), sample.getVialNo()):
           self._setLoadedSample(sample)
           return True
@@ -289,6 +286,8 @@ class FlexHCD(SampleChanger):
         self._execute_cmd('unloadSample', sample.getCellNo(), sample.getBasketNo(), sample.getVialNo())
         if self._execute_cmd("get_loaded_sample") == (-1,-1,-1):
             self._resetLoadedSample()
+            if self.controller:
+                self.controller.prepare_flex(release_interlock=True)
             return True
         return False
 
@@ -311,33 +310,40 @@ class FlexHCD(SampleChanger):
         pass
 
     def _updateState(self):
+        defreezing = self._execute_cmd("isDefreezing")
+
+        if defreezing:
+          return
+
         try:
           state = self._readState()
         except:
           state = SampleChangerState.Unknown
-        if state == SampleChangerState.Moving and self._isDeviceBusy(state):
-            return          
+
         self._setState(state)
-      
+
     def isSequencerReady(self):
         if self.prepareLoad:
             cmdobj = self.getCommandObject
             return all([cmd.isSpecReady() for cmd in (cmdobj("moveToLoadingPosition"),)])
         return True
-            
- 
+
     def _readState(self):
         # should read state from robot
+
         state = "RUNNING" if self._execute_cmd("robot.isBusy") else "STANDBY"
+
         if state == 'STANDBY' and not self.isSequencerReady():
           state = 'RUNNING'
+
         state_converter = { "ALARM": SampleChangerState.Alarm,
                             "FAULT": SampleChangerState.Fault,
                             "RUNNING": SampleChangerState.Moving,
                             "READY": SampleChangerState.Ready,
                             "STANDBY": SampleChangerState.Ready }
+
         return state_converter.get(state, SampleChangerState.Unknown)
-                        
+
     def _isDeviceBusy(self, state=None):
         if state is None:
             state = self._readState()
@@ -352,7 +358,7 @@ class FlexHCD(SampleChanger):
         with gevent.Timeout(timeout, Exception("Timeout waiting for device ready")):
             while not self._isDeviceReady():
                 gevent.sleep(0.01)
-            
+
     def _updateSelection(self):
         cell, puck = self._execute_cmd('get_cell_position')
         sample_cell, sample_puck, sample = self._execute_cmd('get_loaded_sample')

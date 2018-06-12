@@ -1,3 +1,4 @@
+
 """
 A client for ISPyB Webservices.
 """
@@ -10,7 +11,6 @@ import itertools
 import time
 from urlparse import urljoin
 
-from suds.transport.http import HttpAuthenticated
 from suds.client import Client
 from suds import WebFault
 from suds.sudsobject import asdict
@@ -93,11 +93,25 @@ def utf_encode(res_d):
         if isinstance(res_d[key], dict):
             utf_encode(res_d)
 
-        if isinstance(res_d[key], suds.sax.text.Text):
+        if type(res_d[key]) in (int, float, bool, str):
+        # Ignore primitive types
+            pass
+        elif isinstance(res_d[key], suds.sax.text.Text):
+        # utf-8 encode Text data
             try:
                 res_d[key] = res_d[key].encode('utf8', 'ignore')
             except:
                 pass
+        else:
+        # If not primitive or Text data, complext type, try to convert to
+        # dict or str if the first fails
+            try:
+                res_d[key] = utf_encode(asdict(res_d[key]))
+            except:
+                try:
+                    res_d[key] = str(res_d[key]) 
+                except:
+                    res_d[key] = 'ISPyBClient: could not encode value'
 
     return res_d
 
@@ -181,21 +195,27 @@ class ISPyBClient2(HardwareObject):
                 _WS_AUTOPROC_URL = _WSDL_ROOT + \
                     'ToolsForAutoprocessingWebService?wsdl'
 
-                t1 = HttpAuthenticated(username = self.ws_username,
+
+                if self.ws_root.strip().startswith("https://"):
+                    from suds.transport.https import HttpAuthenticated
+                else:
+                    from suds.transport.http import HttpAuthenticated
+
+                t1 = HttpAuthenticated(username = self.ws_username, 
                                       password = self.ws_password,
-			              proxy=self.proxy)
+			                          proxy=self.proxy)
 
                 t2 = HttpAuthenticated(username = self.ws_username,
                                       password = self.ws_password,
-				      proxy=self.proxy)
+				                      proxy=self.proxy)
 
                 t3 = HttpAuthenticated(username = self.ws_username,
                                       password = self.ws_password,
-				      proxy=self.proxy)
+				                      proxy=self.proxy)
 
                 t4 = HttpAuthenticated(username = self.ws_username,
-                                       password = self.ws_password,
-				       proxy=self.proxy)
+                                      password = self.ws_password,
+				                      proxy=self.proxy)
                 try:
                     self.__shipping = Client(_WS_SHIPPING_URL, timeout = 3,
                                              transport = t1, cache=None,
@@ -823,7 +843,6 @@ class ISPyBClient2(HardwareObject):
 
         blSetupId = None
         if self.__collection:
-
             session = {}
 
             try:
@@ -993,8 +1012,10 @@ class ISPyBClient2(HardwareObject):
         if self.__tools_ws:
             try:
                 response_samples = self.__tools_ws.service.\
-                    findSampleInfoLightForProposal(proposal_id,
-                                                   self.beamline_name)
+                   findSampleInfoLightForProposal(proposal_id, self.beamline_name)
+
+                response_samples = [utf_encode(asdict(sample)) for sample in response_samples]
+
             except WebFault as e:
                 logging.getLogger("ispyb_client").exception(str(e))
             except URLError:
@@ -1195,7 +1216,6 @@ class ISPyBClient2(HardwareObject):
         :rtype: int
         """
         if self.__collection:
-
             try:
                 # The old API used date formated strings and the new
                 # one uses DateTime objects.
@@ -1203,6 +1223,14 @@ class ISPyBClient2(HardwareObject):
                     strptime(session_dict["startDate"] , "%Y-%m-%d %H:%M:%S")
                 session_dict["endDate"] = datetime.\
                     strptime(session_dict["endDate"], "%Y-%m-%d %H:%M:%S")
+
+                try:
+                    session_dict["lastUpdate"]  = datetime.\
+                       strptime(session_dict["lastUpdate"].split("+")[0] , "%Y-%m-%d %H:%M:%S")
+                    session_dict["timeStamp"] = datetime.\
+                       strptime(session_dict["timeStamp"].split("+")[0], "%Y-%m-%d %H:%M:%S")
+                except:
+                    pass
 
                 session = self.__collection.service.\
                     storeOrUpdateSession(session_dict)
@@ -1422,11 +1450,13 @@ class ISPyBClient2(HardwareObject):
         if self.__collection:
 
             try:
-                xfespectrum_dict['startTime'] = datetime.\
-                    strptime(xfespectrum_dict["startTime"],"%Y-%m-%d %H:%M:%S")
+                if isinstance(xfespectrum_dict["startTime"], str):
+                    xfespectrum_dict['startTime'] = datetime.strptime(xfespectrum_dict["startTime"],"%Y-%m-%d %H:%M:%S")
 
-                xfespectrum_dict['endTime'] = datetime.\
-                    strptime(xfespectrum_dict["endTime"], "%Y-%m-%d %H:%M:%S")
+                    xfespectrum_dict['endTime'] = datetime.strptime(xfespectrum_dict["endTime"], "%Y-%m-%d %H:%M:%S")
+                else:
+                    xfespectrum_dict['startTime'] = xfespectrum_dict["startTime"]
+                    xfespectrum_dict['endTime'] = xfespectrum_dict["endTime"]
 
                 status['xfeFluorescenceSpectrumId'] = \
                     self.__collection.service.\

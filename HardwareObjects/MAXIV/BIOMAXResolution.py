@@ -17,16 +17,16 @@ class BIOMAXResolution(Resolution.Resolution):
         self.detector = self.getObjectByRole("detector")
  
         if self.detector:
-	    try:
+            try:
                 self.det_width = self.detector.get_x_pixels_in_detector()
                 self.det_height = self.detector.get_y_pixels_in_detector()
-	    except:
+            except:
                 self.det_width = 4150
                 self.det_height = 4371
 
-        else:
-            self.valid = False
-            logging.getLogger().exception('Cannot get detector size')
+            else:
+                self.valid = False
+                logging.getLogger().exception('Cannot get detector size')
 
         self.update_beam_centre(self.dtox.getPosition()) 
         self.connect(self.dtox, "stateChanged", self.dtoxStateChanged)
@@ -42,9 +42,9 @@ class BIOMAXResolution(Resolution.Resolution):
 
         try:
             ttheta = 2*math.asin(current_wavelength / (2*res))
-	    return self.det_radius / math.tan(ttheta)
+            return self.det_radius / math.tan(ttheta)
         except Exception as ex:
-	    print ex
+            print ex
             return None
 
     def dist2res(self, dist=None):
@@ -62,4 +62,3 @@ class BIOMAXResolution(Resolution.Resolution):
     def update_beam_centre(self, dtox):
         beam_x, beam_y = self.get_beam_centre(dtox)
         self.det_radius =  min(self.det_width - beam_x, self.det_height - beam_y, beam_x, beam_y)*0.075
-

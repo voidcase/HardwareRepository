@@ -73,10 +73,11 @@ class BIOMAXEnergy(Energy.Energy):
     def getEnergyLimits(self):
         if not self.tunable:
             return None
+
         if self.energy_motor is not None:
             try:
                 self.en_lims = self.energy_motor.getLimits()
-		self.en_lims = (float(self.en_lims[0])/1000, float(self.en_lims[1])/1000)
+                self.en_lims = (float(self.en_lims[0])/1000, float(self.en_lims[1])/1000)
                 return self.en_lims 
             except:
                 logging.getLogger("HWR").exception("EnergyHO: could not read energy motor limits")
@@ -91,4 +92,3 @@ class BIOMAXEnergy(Energy.Energy):
         else:
             logging.getLogger('user_level_log').debug("Energy: moving energy to %g", energy)
             self.energy_motor.move(energy * 1000)
-

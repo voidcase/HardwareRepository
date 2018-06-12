@@ -93,7 +93,6 @@ class MAXIVAutoProcessing(HardwareObject):
 	for program in self.autoproc_programs:
             if process_event == program.getProperty("event"):
                 module = program.getProperty("module").lower()
-	      	print 2*'###########'
                 if process_event == "after":
                     input_filename, will_execute = self.create_autoproc_input(process_event, params_dict)
                     path = params_dict["auto_dir"]
@@ -103,21 +102,19 @@ class MAXIVAutoProcessing(HardwareObject):
                     anomalous = False
                     cell = "0,0,0,0,0,0"
                     space_group = None
-		    print 'Module: ', module, '>> Will execute: ', will_execute
-		    print 'input_filename   ', input_filename
-		    try:
+
+                    try:
                         if module == 'ednaproc' and will_execute:
                             from ednaProcLauncher import EdnaProcLauncher
                             mod =  EdnaProcLauncher(path, mode, dataCollectionId, residues, anomalous, cell, space_group)
-
                         elif module == 'autoproc' and will_execute:
                             from autoProcLauncher import AutoProcLauncher
                             mod = AutoProcLauncher(path, mode, dataCollectionId, residues, anomalous, cell, space_group)
-			elif module == 'fastdp' and will_execute:
-			    from fastdpLauncher import fastdpLauncher
+                        elif module == 'fastdp' and will_execute:
+                            from fastdpLauncher import fastdpLauncher
                             mod = fastdpLauncher(path, mode, dataCollectionId, residues, anomalous, cell, space_group)
-		    except Exception as ex:
-			print ex
+                    except Exception as ex:
+                       print ex
                 if process_event == 'image':
                     if frame_number == 1 or frame_number == params_dict['oscillation_sequence'][0]['number_of_images']:
                         endOfLineToExecute = " %s %s/%s_%d_%05d.cbf" % (params_dict["fileinfo"]["directory"],
@@ -133,6 +130,7 @@ class MAXIVAutoProcessing(HardwareObject):
 		    except Exception as ex:
                         logging.getLogger("HWR").error("[MAXIVAutoprocessing] Module %s  execution error." % module)
 			print module, ex
+
     def autoproc_done(self, current_autoproc):
         """
         Descript. :
