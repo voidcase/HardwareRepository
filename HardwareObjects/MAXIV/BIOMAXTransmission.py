@@ -48,7 +48,7 @@ class BIOMAXTransmission(Equipment):
     	    raise Exception('Transmssion out of limits.')
 
         with gevent.Timeout(10, Exception("Timeout waiting for device to be stopped")):
-                while self.transmission_motor.is_moving()::
+                while self.transmission_motor.is_moving():
                     gevent.sleep(0.1)
 
     	self.transmission_motor.move(value)
