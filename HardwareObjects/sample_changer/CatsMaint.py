@@ -61,6 +61,7 @@ class CatsMaint(Equipment):
         self._lid2state = None
         self._lid3state = None
         self._charging = None
+	self._insoak = None
             
     def init(self):      
 
@@ -101,6 +102,10 @@ class CatsMaint(Equipment):
             "polling": 1000, }, "di_Lid1Open")
         self._chnLid1State.connectSignal("update", self._updateLid1State)
 
+        self._chnInSoak = self.addChannel({ "type": "tango", 
+            "name": "_chnInSoak", "tangoname": self.tangoname, 
+            "polling": 1000, }, "InSoak")
+
         if self.nb_of_lids > 1:
             self._chnLid2State = self.addChannel({ "type": "tango", 
                 "name": "_chnLid2State", "tangoname": self.tangoname, 
@@ -119,6 +124,7 @@ class CatsMaint(Equipment):
         self._chnToolOpenClose.connectSignal("update", self._updateToolState)
         self._chnMessage.connectSignal("update", self._updateMessage)
         self._chnLN2Regulation.connectSignal("update", self._updateRegulationState)
+        self._chnInSoak.connectSignal("update", self._updateSoakState)
            
         # 
         self._cmdPowerOn = self.addCommand({ "type": "tango", 
@@ -458,6 +464,9 @@ class CatsMaint(Equipment):
     def _updateOperationMode(self, value):
         self._charging = not value
 
+    def _updateSoakState(self, value):
+	self._insoak = value
+
     def _updateGlobalState(self):
         state_dict, cmd_state, message = self.get_global_state()
         self.emit('globalStateChanged', (state_dict, cmd_state, message))
@@ -510,7 +519,7 @@ class CatsMaint(Equipment):
            "openlid1": (not self._lid1state) and self._powered and _ready,
            "closelid1": self._lid1state and self._powered and _ready,
            "dry": (not self._running) and self._powered and _ready,
-           "soak": (not self._running) and self._powered and _ready,
+           "soak": (not self._running) and (not self._insoak) and self._powered and _ready,
            "home": (not self._running) and self._powered and _ready,
            "back": (not self._running) and self._powered and _ready,
            "safe": (not self._running) and self._powered and _ready,
