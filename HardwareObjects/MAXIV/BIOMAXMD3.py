@@ -65,6 +65,14 @@ class BIOMAXMD3(GenericDiffractometer):
         self.focus_motor_hwobj = self.motor_hwobj_dict['focus']
         self.sample_x_motor_hwobj = self.motor_hwobj_dict['sampx']
         self.sample_y_motor_hwobj = self.motor_hwobj_dict['sampy']
+	try:
+            self.kappa_motor_hwobj = self.motor_hwobj_dict['kappa']
+	except:
+            self.kappa_motor_hwobj = None
+	try:
+            self.kappa_phi_motor_hwobj = self.motor_hwobj_dict['kappa_phi']
+	except:
+            self.kappa_phi_motor_hwobj = None
 
         self.cent_vertical_pseudo_motor = None
         try:
@@ -451,10 +459,10 @@ class BIOMAXMD3(GenericDiffractometer):
         motors_dict = {}
         if keep_position:
             for motor in motors:
-        try:
-            current_positions[motor] = self.motor_hwobj_dict[motor].getPosition()
-        except:
-            pass
+                try:
+                    current_positions[motor] = self.motor_hwobj_dict[motor].getPosition()
+                except:
+                    pass
         try:
             self.wait_device_ready(10)
         except Exception as ex:
@@ -475,7 +483,7 @@ class BIOMAXMD3(GenericDiffractometer):
         try:
             motors_dict.pop('kappa')
             motors_dict.pop('kappa_phi')
-                logging.getLogger('HWR').info('[BIOMAXMD3] Removing kappa and kappa_phi motors.')
+            logging.getLogger('HWR').info('[BIOMAXMD3] Removing kappa and kappa_phi motors.')
         except Exception as ex:
             print ex
         logging.getLogger("HWR").debug("BIOMAXMD3: in move_sync_motors, wait: %s, motors: %s, tims: %s " %(wait, motors_dict, time.time()))
@@ -543,4 +551,15 @@ class BIOMAXMD3(GenericDiffractometer):
         return self.channel_dict["State"].getValue() == DiffractometerState.tostring(\
         #return self.current_state == DiffractometerState.tostring(\
                     DiffractometerState.Ready)
+
+    def get_positions(self):
+      return { "phi": float(self.phi_motor_hwobj.getPosition()),
+               "focus": float(self.focus_motor_hwobj.getPosition()),
+               "phiy": float(self.phiy_motor_hwobj.getPosition()),
+               "phiz": float(self.phiz_motor_hwobj.getPosition()),
+               "sampx": float(self.sample_x_motor_hwobj.getPosition()),
+               "sampy": float(self.sample_y_motor_hwobj.getPosition()),
+               "kappa": float(self.kappa_motor_hwobj.getPosition()) if self.kappa_motor_hwobj else None,
+               "kappa_phi": float(self.kappa_phi_motor_hwobj.getPosition()) if self.kappa_phi_motor_hwobj else None,
+               "zoom": float(self.zoom_motor_hwobj.getPosition())}
 
