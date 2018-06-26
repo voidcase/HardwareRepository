@@ -11,13 +11,15 @@ class BIOMAXPatches(HardwareObject):
         '''
         Ensure that the detector is in safe position and sample changer in SOAK
         '''
+	if not self.sample_changer._chnPowered.getValue():
+	    raise RuntimeError('Cannot load sample, sample changer not powered')
 	if not self.sc_in_soak():
 	    raise RuntimeError('Cannot load sample, sample changer not in SOAK position')
+	self.curr_dtox_pos = self.dtox_hwobj.getPosition()
         if self.dtox_hwobj is not None and self.dtox_hwobj.getPosition() < self.safe_position:
             logging.getLogger("HWR").info("Moving detector to safe position before loading a sample.")
             logging.getLogger("user_level_log").info("Moving detector to safe position before loading a sample.")
 	    self.wait_motor_ready(self.dtox_hwobj)
-	    self.curr_dtox_pos = self.dtox_hwobj.getPosition()
             self.dtox_hwobj.syncMove(self.safe_position, timeout = 30)
             logging.getLogger("HWR").info("Detector in safe position, position: %s" %self.dtox_hwobj.getPosition())
             logging.getLogger("user_level_log").info("Detector in safe position, position: %s" %self.dtox_hwobj.getPosition())
@@ -61,8 +63,12 @@ class BIOMAXPatches(HardwareObject):
     def wait_motor_ready(self, mot_hwobj, timeout=30):
 	with gevent.Timeout(timeout, RuntimeError('Motor not ready')):
 	    while mot_hwobj.is_moving():
-	        gevent.sleep(0.5)   
+	        gevent.sleep(0.5)
 
+    def sc_in_soak(self):
+	return self.sample_changer._chnInSoak.getValue()
+
+    '''
     def sc_in_soak(self):
 	x_pos = self.sample_changer.getChannelObject('Xpos').getValue()
 	y_pos = self.sample_changer.getChannelObject('Ypos').getValue()
@@ -80,7 +86,7 @@ class BIOMAXPatches(HardwareObject):
 	rz_in_soak = sc.rzpos_soak - 1 < rz_pos < sc.rzpos_soak + 1
 
 	return x_in_soak & y_in_soak & y_in_soak & rx_in_soak & ry_in_soak & rz_in_soak
-
+    '''
     def init(self, *args):
         self.sample_changer = self.getObjectByRole('sample_changer')
         self.diffractometer = self.getObjectByRole('diffractometer')
@@ -90,6 +96,7 @@ class BIOMAXPatches(HardwareObject):
         self.dtox_hwobj = self.getObjectByRole('dtox')
         #self.sample_changer.load = types.MethodType(self.new_load, self.sample_changer)
         #self.sample_changer.unload = types.MethodType(self.new_unload, self.sample_changer)
+	'''
         position_attrs = ('Xpos', 'Ypos', 'Zpos', 'RXpos', 'RYpos', 'RZpos')
 	for channel_name in position_attrs:
 	    self.sample_changer.addChannel({"type": "tango",
@@ -99,6 +106,6 @@ class BIOMAXPatches(HardwareObject):
                              },
                             channel_name
                             )
-
+	'''
         self.sample_changer.load = types.MethodType(self.new_load, self.sample_changer)
         self.sample_changer.unload = types.MethodType(self.new_unload, self.sample_changer)
