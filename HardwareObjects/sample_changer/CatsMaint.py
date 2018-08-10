@@ -525,7 +525,7 @@ class CatsMaint(Equipment):
            "safe": (not self._running) and self._powered and _ready,
            "clear_memory": True,
            "reset": True,
-           "abort": self._running,
+           "abort": True,
         }
 
         message = self._message
