@@ -416,7 +416,13 @@ class Grid(Shape):
         self.beam_height = 0
 
         self.set_id(Grid.SHAPE_COUNT)
-
+    
+    def getRGBfromI(self, RGBint):
+        blue =  RGBint & 255
+        green = (RGBint >> 8) & 255
+        red =   (RGBint >> 16) & 255
+        return red, green, blue
+    
     def get_centred_position(self):
         return self.cp_list[1]
 
@@ -438,6 +444,45 @@ class Grid(Shape):
 
     def set_result(self, result_data):
         self.result = result_data
+
+    def set_cell_result(self, cell_number, value):
+        r, g, b = self.getRGBfromI(value)
+        cell_count = self.num_cols*self.num_rows
+
+        if self.get_result() is None:
+            res = {}
+            for i in range(1, self.num_rows*self.num_cols + 1):
+                res[i] = [i, [0, 0, 0, 0]]
+            self.set_result(res)
+
+        if self.cell_count_fun == "zig-zag":
+            current_row = divmod(cell_number-1, self.num_cols)[0] + 1
+            row_counts = range((current_row-1)*self.num_cols+1, current_row*self.num_cols+1) 
+
+            if current_row % 2 == 0: 
+                # inverse order in this row
+                row_counts.reverse()
+            current_col = row_counts.index(cell_number) + 1
+            index = ((current_row-1)*self.num_cols+current_col)
+            self.result[index] =  [index, [r, g, b, 0]]
+        elif self.cell_count_fun == "top-down-zig-zag":
+            pass
+        elif self.cell_count_fun == "top-down":
+            pass
+        elif self.cell_count_fun == "inverse-zig-zag":
+            current_col = self.num_cols - divmod(cell_number-1, self.num_rows)[0]
+            col_counts = range((self.num_cols - current_col)*self.num_rows+1, cell_count - (current_col-1)*self.num_rows + 1)
+            if self.num_cols % 2 == 0:
+                if current_col % 2 == 0:
+                    col_counts.reverse()
+            else:
+               if current_col % 2 != 0:
+                    col_counts.reverse() 
+            current_row = col_counts.index(cell_number) + 1
+            index = (current_row-1)*self.num_cols +current_col
+            self.result[index] =  [index, [r, g, b, 0]]
+        else:
+            self.result[cell_number] =  [cell_number, [r, g, b, 0]]
 
     def get_result(self):
         return self.result
