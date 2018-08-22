@@ -74,7 +74,9 @@ class BIOMAXEiger(Equipment):
                      'YPixelSize', 'NbTriggersMin', 'CountTimeInte', 'DownloadDirectory',
                      'FilesInBuffer', 'Error', 'BeamCenterX', 'BeamCenterY', 'DetectorDistance',
                      'OmegaIncrement', 'OmegaStart', 'Compression', 'RoiMode', 'State', "Status",
-                     'XPixelsDetector', 'YPixelsDetector', 'CollectionUUID'
+                     'XPixelsDetector', 'YPixelsDetector', 'CollectionUUID', 'RoiMode',
+                     'HeaderDetail', 'HeaderAppendix', 'ImageAppendix',
+                     'StreamState'
                      )
 
         fw_list = ('FilenamePattern', 'ImagesPerFile', 'BufferFree', 'FileWriterState', 'ImageNbStart', 'Mode')
@@ -98,7 +100,7 @@ class BIOMAXEiger(Equipment):
 
         # not all of the following commands are needed, for now all of them here for convenience
         cmd_list = ('Arm', 'Trigger', 'Abort', 'Cancel', 'ClearBuffer', 'DeleteFileFromBuffer',
-                    'Disarm', 'DownloadFilesFromBuffer'
+                    'Disarm', 'DownloadFilesFromBuffer', 'EnableStream', 'DisableStream'
                     )
 
         for channel_name in attr_list:
@@ -216,7 +218,7 @@ class BIOMAXEiger(Equipment):
 	    #if type(new_val)== 'str' or type(new_val) == 'unicode':
 	    #	while self.get_value(att) != new_val:
             #	    gevent.sleep(0.1)
-	    if att == 'FilenamePattern':
+	    if att in ['FilenamePattern', 'HeaderDetail', 'HeaderAppendix', 'ImageAppendix']:
 	    	while self.get_value(att) != new_val:
                     gevent.sleep(0.1)
 	    elif 'BeamCenter' in att:
@@ -304,6 +306,33 @@ class BIOMAXEiger(Equipment):
     def has_shutterless(self):
         return True
 
+    def get_collection_uuid(self):
+        return self.get_value("CollectionUUID")
+
+    def get_header_detail(self):
+        """
+	Detail of header data to be sent.
+        """
+        return self.get_value("HeaderDetail")
+
+    def get_header_appendix(self):
+        """
+        Data that is appended to the header data
+        """
+        return self.get_value("HeaderAppendix")
+
+    def get_image_appendix(self):
+        """
+        Data that is appended to the image data
+        """
+        return self.get_value("ImageAppendix")
+
+    def get_stream_state(self):
+        """
+        "disabled", "ready", "acquire" or "error".
+        """
+        return self.get_value("StreamState")
+
     #  GET INFORMATION END
 
     #  SET VALUES
@@ -364,8 +393,32 @@ class BIOMAXEiger(Equipment):
     def set_collection_uuid(self, col_uuid):
         self.set_value("CollectionUUID", col_uuid)
 
-    def get_collection_uuid(self):
-        return self.get_value("CollectionUUID")
+    def set_header_detail(self, value):
+        """
+        Detail of header data to be sent.
+        """
+	if value not in ["all", "basic", "none"]:
+            logging.getLogger("HWR").error("Cannot set stream header detail")
+            return
+	self.set_value("HeaderDetail", value)
+
+    def set_header_appendix(self, value):
+        """
+        Data that is appended to the header data
+        """
+	self.set_value("HeaderAppendix", value)
+
+    def set_image_appendix(self, value):
+        """
+        Data that is appended to the image data
+        """
+        self.set_value("ImageAppendix", value)
+
+    def set_roi_mode(self, value):
+	if value not in ["4M", "16M", "disabled"]:
+            logging.getLogger("HWR").error("Cannot set stream header detail")
+            return
+        return self.get_value("RoiMode")
 
     #  SET VALUES END
 
@@ -511,6 +564,12 @@ class BIOMAXEiger(Equipment):
 
     def disarm(self):
         self.getCommandObject("Disarm")()
+
+    def enable_stream(self):
+        self.getCommandObject("EnableStream")()
+
+    def disable_stream(self):
+        self.getCommandObject("DisableStream")()
 
     def cancel(self):
         self.getCommandObject("Cancel")()
