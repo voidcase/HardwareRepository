@@ -1471,7 +1471,11 @@ def to_collect_dict(data_collection, session, sample, centred_pos=None):
     acquisition = data_collection.acquisitions[0]
     acq_params = acquisition.acquisition_parameters
     proc_params = data_collection.processing_parameters
-
+    shape_id = ''
+    try:
+        shape_id = data_collection.shape
+    except:
+        pass
     return [{'comment': '',
              'take_snapshots': acq_params.take_snapshots,
              'fileinfo': {'directory': acquisition.path_template.directory,
@@ -1514,7 +1518,8 @@ def to_collect_dict(data_collection, session, sample, centred_pos=None):
              'experiment_type': queue_model_enumerables.\
              EXPERIMENT_TYPE_STR[data_collection.experiment_type],
              'skip_images': acq_params.skip_existing_images,
-             'motors': centred_pos.as_dict() if centred_pos is not None else {}}]
+             'motors': centred_pos.as_dict() if centred_pos is not None else {},
+             'shape': shape_id}]
 
 
 def dc_from_edna_output(edna_result, reference_image_collection,
