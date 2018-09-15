@@ -503,8 +503,8 @@ class TaskGroupQueueEntry(BaseQueueEntry):
         elif task_model.inverse_beam_num_images:
             method_type = "inverse beam"
 
-	 # Disable snapshots and lims for subwedges
-         interleave_item["queue_entry"].enable_take_snapshots = False
+	# Disable snapshots and lims for subwedges
+        interleave_item["queue_entry"].enable_take_snapshots = False
 
 
         logging.getLogger("queue_exec").info("Preparing %s data collection" % method_type)

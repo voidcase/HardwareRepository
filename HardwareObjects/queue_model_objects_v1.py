@@ -526,7 +526,7 @@ class DataCollection(TaskNode):
         self.run_processing_parallel = None
         self.grid = None
         self.parallel_processing_result = None        
-        self.processing_msg_list = []]
+        self.processing_msg_list = []
         self.center_before_collect = False
 
     def as_dict(self):
