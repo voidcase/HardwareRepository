@@ -1,197 +1,123 @@
-#
-#  Project: MXCuBE
-#  https://github.com/mxcube.
-#
-#  This file is part of MXCuBE software.
-#
-#  MXCuBE is free software: you can redistribute it and/or modify
-#  it under the terms of the GNU General Public License as published by
-#  the Free Software Foundation, either version 3 of the License, or
-#  (at your option) any later version.
-#
-#  MXCuBE is distributed in the hope that it will be useful,
-#  but WITHOUT ANY WARRANTY; without even the implied warranty of
-#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-#  GNU General Public License for more details.
-#
-#  You should have received a copy of the GNU General Public License
-#  along with MXCuBE.  If not, see <http://www.gnu.org/licenses/>.
-
-"""
-EMBLPPUControl
-"""
-
 import logging
 from gevent import spawn_later
 from HardwareRepository.BaseHardwareObjects import Device
 
 
-__author__ = "Ivars Karpics"
-__credits__ = ["MXCuBE colaboration"]
-
-__version__ = "2.2."
-__maintainer__ = "Ivars Karpics"
-__email__ = "ivars.karpics[at]embl-hamburg.de"
-__status__ = "Draft"
+__credits__ = ["EMBL Hamburg"]
+__version__ = "2.3."
+__category__ = "General"
 
 
 class EMBLPPUControl(Device):    
-    """
-    Descript. :
-    """  
+
     def __init__(self, name):
-        """
-        Descript. :
-        """ 
         Device.__init__(self, name)	
+
+        self.all_status = None
         self.status_result = None
         self.restart_result = None
-        self.last_resort_result = None
-        self.execution_state = None
-        self.error_state = None
-        self.is_error = None
 
-        self.cmd_furka_restart = None
+        self.error_state = None
+        self.is_error = False
+        self.file_transfer_in_error = False
+
         self.cmd_all_status = None
+        self.cmd_furka_restart = None
         self.cmd_all_restart = None
+
+        self.msg = ""
+      
+        self.status_running = None
+        self.restart_running = None
 	
     def init(self):
-        """
-        Descript. :
-        """
-
+        self.all_status = ""
         self.status_result = ""
         self.restart_result = ""
-        self.last_resort_result = ""
-
-        self.cmd_furka_restart = self.getCommandObject('furkaRestart')
-        if self.cmd_furka_restart is not None:
-            self.cmd_furka_restart.connectSignal('commandReplyArrived', \
-                 self.restart_reply)
-            self.cmd_furka_restart("")
-
-        self.cmd_all_status = self.getCommandObject('allStatus')
-        if self.cmd_all_status is not None:
-            #self.cmd_all_status.connectSignal('commandReplyArrived', \
-            #     self.status_reply)
-            pass
-
-        self.cmd_all_restart = self.getCommandObject('allRestart')
-        if self.cmd_all_restart is not None:
-            self.cmd_all_restart.connectSignal('commandReplyArrived', \
-                 self.restart_all_reply)
-
         self.execution_state = self.getProperty("executionState")
         self.error_state = self.getProperty("errorState")
 
-        self.restart_reply_cb()
+        self.chan_all_status = self.getChannelObject('chanAllStatus')
 
-    def restart_reply_cb(self):
-        """
-        Descript. :
-        """
-        self.restart_result = self.cmd_furka_restart.get()
-        if ((self.restart_result == self.execution_state) or
-            (self.restart_result is None)):
-            spawn_later(1, self.restart_reply_cb)
-            #QTimer.singleShot(1000, self.restart_reply_cb)
+        self.cmd_all_status = self.getCommandObject('cmdAllStatus')
+        self.cmd_all_restart = self.getCommandObject('cmdAllRestart')
+        self.cmd_furka_restart = self.getCommandObject('cmdFurkaRestart') 
+        self.cmd_furka_restart("")
+
+        self.get_status()
+
+        self.chan_file_info = self.getChannelObject('chanFileInfo', optional=True)
+        if self.chan_file_info is not None:
+            self.chan_file_info.connectSignal('update', self.file_info_changed)
+   
+        #self.update_counter = 0
+
+        #self.at_startup = True
+        self.connect(self.chan_all_status,
+                     "update",
+                     self.all_status_changed)
+
+        self.chan_all_restart = self.getChannelObject('chanAllRestart')
+        self.connect(self.chan_all_restart,
+                     "update",
+                     self.all_restart_changed)
+
+    def all_status_changed(self, status):
+        if self.status_running and not status: 
+           self.all_status = self.cmd_all_status.get() #status
+           self.update_status()
+        self.status_running = status
+
+    def all_restart_changed(self, status):
+        if self.restart_running and not status:
+           self.restart_result = self.cmd_all_restart.get() #status
+        self.restart_running = status
+
+    def file_info_changed(self, value):
+        if len(value) == 2:
+            values = value[1]
         else:
-            if (self.restart_result.startswith(self.error_state)):
-                logging.getLogger("HWR").error("PPUControl: %s" % \
-                        self.restart_result)
-            else:
-                logging.getLogger("HWR").debug("PPUControl: %s" % \
-                        self.restart_result)
-            self.get_status()
+            values = value[0]
+         
+        self.file_transfer_in_error = values[2] > 0
+        self.emit("fileTranferStatusChanged", (values))
 
-    def status_reply_cb(self):
-        """
-        Descript. :
-        """
-        status_result = self.cmd_all_status.get()
-        if ((status_result == self.execution_state) or
-            (status_result is None)):
-            spawn_later(1, self.status_reply_cb)
-        else:
-            self.status_result = status_result
-            self.is_error = self.status_result.startswith(self.error_state)
-            self.emit('ppuStatusChanged', (self.is_error, self.status_result))
-            if self.is_error:
-                logging.getLogger("HWR").error("PPUControl: %s" % \
-                        self.status_result)
-            else:
-                logging.getLogger("HWR").debug("PPUControl: %s" % \
-                        self.status_result)
+        self.is_error = self.all_status.startswith(self.error_state) or \
+                        self.file_transfer_in_error
 
-    def last_resort_reply_cb(self):
-        """
-        Descript. :
-        """
-        last_resort_result = self.cmd_all_restart.get()
-        if ((last_resort_result == self.execution_state) or
-            (last_resort_result is None)):
-            spawn_later(1, self.last_resort_reply_cb)
-        else:
-            self.last_resort_result = last_resort_result
-            self.is_error = self.last_resort_result.startswith(self.error_state)
-            self.emit('ppuStatusChanged', (self.is_error, self.last_resort_result))
-            if self.is_error:
-                logging.getLogger("HWR").error("PPUControl: %s" % \
-                        self.last_resort_result)
-            else:
-                logging.getLogger("HWR").debug("PPUControl: %s" % \
-                        self.last_resort_result)  
-
-    def restart_reply(self, result, temp):
-        """
-        Descript. :
-        """
-        self.restart_result = result
-
-    def get_restart_reply(self):
-        """
-        Descript. :
-        """
-        return self.restart_result
-
-    def status_reply(self, result, temp):
-        """
-        Descript. :
-        """
-        self.status_result = result
-
-    def get_status_reply(self):
-        """
-        Descript. :
-        """
-        return self.status_result 
-
-    def restart_all_reply(self, result, temp):
-        """
-        Descript. :
-        """ 
-        self.last_resort_result = result
-
-    def get_restart_all_reply(self):
-        """
-        Descript. :
-        """
-        return self.last_resort_result 
+        if self.file_transfer_in_error:
+            self.emit('ppuStatusChanged', self.is_error, "File tansfer in error")
 
     def get_status(self):
-        """
-        Descript. :
-        """
         self.cmd_all_status("")
-        self.status_reply_cb()
-        return self.is_error, self.status_result
+        return self.is_error, self.all_status
+
+    def update_status(self):
+        self.is_error = self.all_status.startswith(self.error_state) or \
+                        self.file_transfer_in_error
+
+        if self.all_status.startswith(self.error_state):
+            msg_list = self.all_status.split("\n")
+            logging.getLogger("GUI").error("PPU control is in Error state!")
+            if len(msg_list) > 1:
+                for msg_line in msg_list:
+                    if msg_line:
+                        logging.getLogger("GUI").error("PPU control: %s" % msg_line)
+        else:
+            logging.getLogger("HWR").debug("PPUControl: %s" % \
+                   self.all_status)
+
+        self.msg = "Restart result:\n\n%s\n\n" % self.restart_result + \
+                   "All status result:\n\n%s\n" % self.all_status
+
+        self.emit('ppuStatusChanged', self.is_error, self.msg)
+
+        return self.is_error, self.all_status
 
     def restart_all(self):
-        """
-        Descript. :
-        """
+        self.emit('ppuStatusChanged', False,"Restarting.... ")
         self.cmd_all_restart("")
-        self.last_resort_reply_cb()
+        self.get_status()
 
     def update_values(self):
-        self.emit('ppuStatusChanged', (self.is_error, self.last_resort_result))
+        self.emit('ppuStatusChanged', self.is_error, self.msg)

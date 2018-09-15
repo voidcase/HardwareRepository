@@ -2,6 +2,7 @@ import logging
 from logging.handlers import RotatingFileHandler
 import os
 import sys
+import HardwareRepository
 
 #
 # Add path to root BlissFramework directory
@@ -18,6 +19,11 @@ def getStdHardwareObjectsPath():
     return os.path.dirname(HardwareObjects.__file__)
 
 sys.path.insert(0, getStdHardwareObjectsPath())
+
+hwobj_dir = os.path.join(os.path.dirname(os.path.abspath(__file__)),
+                         "HardwareObjects")
+
+HardwareRepository.addHardwareObjectsDirs([hwobj_dir])
 
 #
 # create the HardwareRepository logger

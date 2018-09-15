@@ -1,5 +1,23 @@
+#
+#  Project: MXCuBE
+#  https://github.com/mxcube.
+#
+#  This file is part of MXCuBE software.
+#
+#  MXCuBE is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#
+#  MXCuBE is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#
+#  You should have received a copy of the GNU General Public License
+#  along with MXCuBE.  If not, see <http://www.gnu.org/licenses/>.
+
 import os
-import glob
 import time
 import logging
 import gevent
@@ -8,536 +26,617 @@ import subprocess
 
 import matplotlib.pyplot as plt
 from mpl_toolkits.axes_grid1 import make_axes_locatable
+from scipy import ndimage
 
-import SimpleHTML as simpleHtml
-import queue_model_enumerables_v1 as qme
+import SimpleHTML
 
 from HardwareRepository.BaseHardwareObjects import HardwareObject
 
-from XSDataControlDozorv1_1 import XSDataInputControlDozor
-from XSDataControlDozorv1_1 import XSDataResultControlDozor
-
 from XSDataCommon import XSDataBoolean
 from XSDataCommon import XSDataDouble
-from XSDataCommon import XSDataFile
 from XSDataCommon import XSDataInteger
 from XSDataCommon import XSDataString
+from XSDataControlDozorv1_1 import XSDataInputControlDozor
+
+
+__license__ = "GPLv3+"
 
 
 class ParallelProcessing(HardwareObject):
     def __init__(self, name):
         HardwareObject.__init__(self, name)
- 
+
         # Hardware objects ----------------------------------------------------
         self.collect_hwobj = None
         self.detector_hwobj = None
+        self.diffractometer_hwobj = None
         self.beamstop_hwobj = None
-        self.lims_hwobj = None 
+        self.lims_hwobj = None
 
         # Internal variables --------------------------------------------------
-        self.processing_start_command = None
-        self.processing_results = None
-        self.processing_done_event = None
+        self.start_command = None
+        self.run_as_mockup = None
+        self.data_collection = None
+        self.grid = None
+        self.params_dict = None
+        self.results_raw = None
+        self.results_aligned = None
+        self.done_event = None
+        self.started = None
 
     def init(self):
-        self.processing_done_event = gevent.event.Event()
+        self.done_event = gevent.event.Event()
 
         self.collect_hwobj = self.getObjectByRole("collect")
+        self.diffractometer_hwobj = self.getObjectByRole("diffractometer")
 
         try:
-           self.detector_hwobj = self.collect_hwobj.detector_hwobj
-           self.lims_hwobj = self.collect_hwobj.lims_client_hwobj
+            self.detector_hwobj = self.collect_hwobj.detector_hwobj
+            self.lims_hwobj = self.collect_hwobj.lims_client_hwobj
         except:
-           try:
-              self.detector_hwobj = self.collect_hwobj.bl_config.detector_hwobj
-              self.lims_hwobj = self.collect_hwobj.cl_config.lims_client_hwobj
-           except:
-              pass
+            try:
+                self.detector_hwobj = self.collect_hwobj.bl_config.detector_hwobj
+                self.lims_hwobj = self.collect_hwobj.cl_config.lims_client_hwobj
+            except:
+                pass
 
         if self.detector_hwobj is None:
-            logging.info("ParallelProcessing: No detector hwobj defined")
+            logging.info("ParallelProcessing: Detector hwobj not defined")
 
         self.beamstop_hwobj = self.getObjectByRole("beamstop")
         if self.beamstop_hwobj is None:
-            logging.info("ParallelProcessing: No beamstop hwobj defined")
+            logging.info("ParallelProcessing: Beamstop hwobj not defined")
 
-        self.processing_start_command = str(self.getProperty("processing_command"))        
+        self.start_command = str(self.getProperty("processing_command"))
+        self.kill_command = str(self.getProperty("kill_command"))
+        self.run_as_mockup = self.getProperty("run_as_mockup")
 
-    def create_processing_input(self, data_collection, processing_params, grid_object):
-        """
-        Descript. : Creates dozor input file base on data collection parameters
-        Args.     : data_collection (object)
-        Return.   : processing_input_file (object)
+    def create_processing_input(self, data_collection):
+        """Creates dozor input file base on data collection parameters
+
+        :param data_collection: data collection object
+        :type : queue_model_objects.DataCollection
         """
         acquisition = data_collection.acquisitions[0]
         acq_params = acquisition.acquisition_parameters
 
-        processing_input_file = XSDataInputControlDozor()
-        _run = "_%d_" % acquisition.path_template.run_number
+        input_file = XSDataInputControlDozor()
         image_file_template = "%s_%%d_%%05d.cbf" % (
-                   acquisition.path_template.get_prefix())
+            acquisition.path_template.get_prefix())
 
-        template = os.path.join(acquisition.path_template.directory,
-                                image_file_template)
+        if "p14" in acquisition.path_template.directory: 
+            template = os.path.join(acquisition.path_template.directory.replace("dataInt/p14","ramdisk"),
+                                    image_file_template)
+        else:
+            template = os.path.join(acquisition.path_template.directory,
+                                    image_file_template)
 
         first_image_num = acq_params.first_image
         images_num = acq_params.num_images
-        last_image_num = first_image_num + images_num - 1 
+        last_image_num = first_image_num + images_num - 1
         run_number = acquisition.path_template.run_number
         lines_num = acq_params.num_lines
-        
         pixel_min = 0
         pixel_max = 0
         beamstop_size = 0
         beamstop_distance = 0
         beamstop_direction = 0
 
-        try: 
-           pixel_min = self.detector_hwobj.get_pixel_min()
-           pixel_max = self.detector_hwobj.get_pixel_max()
-        except:
-           pass
-      
-        try:
-           beamstop_size = self.beamstop_hwobj.get_beamstop_size()
-           beamstop_distance = self.beamstop_hwobj.get_beamstop_distance()
-           beamstop_direction = self.beamstop_hwobj.get_beamstop_direction()
-        except:
-           pass
+        pixel_min = self.detector_hwobj.get_pixel_min()
+        pixel_max = self.detector_hwobj.get_pixel_max()
+        beamstop_size = self.beamstop_hwobj.get_size()
+        beamstop_distance = self.beamstop_hwobj.get_distance()
+        beamstop_direction = self.beamstop_hwobj.get_direction()
 
-        grid_params = grid_object.get_properties()
-        reversing_rotation = grid_params["reversing_rotation"]
+        if data_collection.grid:
+            grid_params = data_collection.grid.get_properties()
+            reversing_rotation = grid_params["reversing_rotation"]
+        else:
+            reversing_rotation = False
 
-        processing_params["template"] = template
-        processing_params["first_image_num"] = first_image_num
-        processing_params["images_num"] = images_num
-        processing_params["lines_num"] = lines_num
-        processing_params["images_per_line"] = images_num / lines_num
-        processing_params["run_number"] = run_number
-        processing_params["pixel_min"] = pixel_min
-        processing_params["pixel_max"] = pixel_max
-        processing_params["beamstop_size"] = beamstop_size
-        processing_params["beamstop_distance"] = beamstop_distance
-        processing_params["beamstop_direction"] = beamstop_direction
-        processing_params["status"] = "Started"
-        processing_params["title"] = "%s_%d_xxxxx.cbf (%d - %d)" % \
+        self.params_dict["template"] = template
+        self.params_dict["first_image_num"] = first_image_num
+        self.params_dict["images_num"] = images_num
+        self.params_dict["lines_num"] = lines_num
+        self.params_dict["images_per_line"] = images_num / lines_num
+        self.params_dict["run_number"] = run_number
+        self.params_dict["osc_midle"] = acq_params.osc_start
+        self.params_dict["osc_range"] = acq_params.osc_range
+        self.params_dict["pixel_min"] = pixel_min
+        self.params_dict["pixel_max"] = pixel_max
+        self.params_dict["beamstop_size"] = beamstop_size
+        self.params_dict["beamstop_distance"] = beamstop_distance
+        self.params_dict["beamstop_direction"] = beamstop_direction
+        self.params_dict["status"] = "Started"
+        self.params_dict["title"] = "%s_%d_#####.cbf (%d - %d)" % \
              (acquisition.path_template.get_prefix(),
-              acquisition.path_template.run_number,
+              run_number,
               first_image_num,
               last_image_num)
-        processing_params["comments"] = "Scan lines: %d, frames per line: %d" % \
-             (lines_num, images_num / lines_num )
+        self.params_dict["comments"] = "Scan lines: %d, frames per line: %d" % \
+             (lines_num, images_num / lines_num)
 
         if lines_num > 1:
-            processing_params["dx_mm"] = grid_params["dx_mm"]
-            processing_params["dy_mm"] = grid_params["dy_mm"]
-            processing_params["steps_x"] = grid_params["steps_x"]
-            processing_params["steps_y"] = grid_params["steps_y"]
-            processing_params["xOffset"] = grid_params["xOffset"]
-            processing_params["yOffset"] = grid_params["yOffset"]
+            self.params_dict["dx_mm"] = grid_params["dx_mm"]
+            self.params_dict["dy_mm"] = grid_params["dy_mm"]
+            self.params_dict["steps_x"] = grid_params["steps_x"]
+            self.params_dict["steps_y"] = grid_params["steps_y"]
+            self.params_dict["xOffset"] = grid_params["xOffset"]
+            self.params_dict["yOffset"] = grid_params["yOffset"]
+        else:
+            self.params_dict["steps_y"] = 1
 
-        processing_input_file.setTemplate(XSDataString(template))
-        processing_input_file.setFirst_image_number(XSDataInteger(first_image_num))
-        processing_input_file.setLast_image_number(XSDataInteger(last_image_num))
-        processing_input_file.setFirst_run_number(XSDataInteger(run_number))
-        processing_input_file.setLast_run_number(XSDataInteger(run_number))
-        processing_input_file.setLine_number_of(XSDataInteger(lines_num))
-        processing_input_file.setReversing_rotation(XSDataBoolean(reversing_rotation))
-        processing_input_file.setPixelMin(XSDataInteger(pixel_min)) # should be -1 for real data
-        processing_input_file.setPixelMax(XSDataInteger(pixel_max))
-        processing_input_file.setBeamstopSize(XSDataDouble(beamstop_size))
-        processing_input_file.setBeamstopDistance(XSDataDouble(beamstop_distance))
-        processing_input_file.setBeamstopDirection(XSDataString(beamstop_direction))
+        input_file.setTemplate(XSDataString(template))
+        input_file.setFirst_image_number(XSDataInteger(first_image_num))
+        input_file.setLast_image_number(XSDataInteger(last_image_num))
+        input_file.setFirst_run_number(XSDataInteger(run_number))
+        input_file.setLast_run_number(XSDataInteger(run_number))
+        input_file.setLine_number_of(XSDataInteger(lines_num))
+        input_file.setReversing_rotation(XSDataBoolean(reversing_rotation))
+        input_file.setPixelMin(XSDataInteger(pixel_min))
+        input_file.setPixelMax(XSDataInteger(pixel_max))
+        input_file.setBeamstopSize(XSDataDouble(beamstop_size))
+        input_file.setBeamstopDistance(XSDataDouble(beamstop_distance))
+        input_file.setBeamstopDirection(XSDataString(beamstop_direction))
 
-        return processing_input_file, processing_params
+        return input_file
 
-    def run_processing(self, data_collection, grid_object):
+    def run_processing(self, data_collection):
+        """Main parallel processing method.
+           1. Generates EDNA input file
+           2. Starts EDNA via subprocess
+
+        :param data_collection: data collection object
+        :type data_collection: queue_model_objects.DataCollection
         """
-        Descript. : Main parallel processing method.
-                    At first EDNA input file is generated based on acq parameters.
-                    If actual execution script is executable then processing
-                    is launched via subprocess. Method do_processing_result_polling
-                    is called after processing is launched.
-        Args.     : data_collection object
-        Return    : None
-        """
-        acquisition = data_collection.acquisitions[0] 
+
+        self.data_collection = data_collection
+        acquisition = self.data_collection.acquisitions[0]
         acq_params = acquisition.acquisition_parameters
-        self.processing_results = {}
 
         prefix = acquisition.path_template.get_prefix()
         run_number = acquisition.path_template.run_number
         process_directory = acquisition.path_template.process_directory
         archive_directory = acquisition.path_template.get_archive_directory()
-        file_wait_timeout = (0.003 + acq_params.exp_time) * \
-                            acq_params.num_images / acq_params.num_lines + 30
+        self.grid = data_collection.grid
 
         # Estimates dozor directory. If run number found then creates
-        # processing and archive directory         
+        # processing and archive directory
         i = 1
         while True:
-            processing_input_file_dirname = "dozor_%s_run%s_%d" % (prefix, run_number, i)
-            processing_directory = os.path.join(process_directory, processing_input_file_dirname)
-            processing_archive_directory = os.path.join(archive_directory, processing_input_file_dirname)
+            processing_input_file_dirname = "dozor_%s_run%s_%d" % \
+                                            (prefix, run_number, i)
+            processing_directory = os.path.join(\
+               process_directory, processing_input_file_dirname)
+            processing_archive_directory = os.path.join(\
+               archive_directory, processing_input_file_dirname)
             if not os.path.exists(processing_directory):
                 break
             i += 1
         if not os.path.isdir(processing_directory):
             os.makedirs(processing_directory)
-        if not os.path.isdir(processing_archive_directory):
-            os.makedirs(processing_archive_directory) 
+        try:
+            if not os.path.isdir(processing_archive_directory):
+                os.makedirs(processing_archive_directory)
+        except:
+            logging.getLogger("GUI").exception(\
+                "Unable to create archive directory %s" % \
+                processing_archive_directory)
 
         try:
             grid_snapshot_filename = None
-            if grid_object is not None:
-                grid_snapshot_filename = os.path.join(processing_archive_directory, "grid_snapshot.png")
-                logging.getLogger("HWR").info("Saving grid snapshot: %s" % grid_snapshot_filename)
-                grid_snapshot = grid_object.get_snapshot()
+            if data_collection.grid is not None:
+                grid_snapshot_filename = os.path.join(\
+                    processing_archive_directory, "grid_snapshot.png")
+                logging.getLogger("HWR").info("Saving grid snapshot: %s" % \
+                    grid_snapshot_filename)
+                grid_snapshot = data_collection.grid.get_snapshot()
                 grid_snapshot.save(grid_snapshot_filename, 'PNG')
         except:
-            logging.getLogger("HWR").exception("Could not save grid snapshot: %s" \
+            logging.getLogger("GUI").exception(\
+                "Could not save grid snapshot: %s" \
                 % grid_snapshot_filename)
 
-        processing_params = {}
-        processing_params["directory"] = processing_directory
-        processing_params["processing_archive_directory"] = processing_archive_directory
-        processing_params["grid_snapshot_filename"] = grid_snapshot_filename
-        processing_params["images_num"] = acq_params.num_lines
-        processing_params["result_file_path"] = processing_params["processing_archive_directory"]
-        processing_params["plot_path"] = os.path.join(\
-             processing_params["directory"], "parallel_processing_result.png")
-        processing_params["cartography_path"] = os.path.join(\
-             processing_params["processing_archive_directory"], "parallel_processing_result.png")  
-        processing_params["log_file_path"] = os.path.join(\
-             processing_params["processing_archive_directory"], "dozor_log.log")        
-        processing_params["group_id"] = data_collection.lims_group_id
-        #processing_params["associated_grid"] = associated_grid
-        #processing_params["associated_data_collection"] = data_collection
-        processing_params["processing_start_time"] = time.strftime("%Y-%m-%d %H:%M:%S")
+        self.params_dict = {}
+        self.params_dict["workflow_type"] = data_collection.run_processing_parallel
+        self.params_dict["directory"] = processing_directory
+        self.params_dict["processing_archive_directory"] = processing_archive_directory
+        self.params_dict["grid_snapshot_filename"] = grid_snapshot_filename
+        self.params_dict["images_num"] = acq_params.num_lines
+        self.params_dict["result_file_path"] = \
+             self.params_dict["processing_archive_directory"]
+        self.params_dict["plot_path"] = os.path.join(\
+             self.params_dict["directory"],
+             "parallel_processing_result.png")
+        self.params_dict["cartography_path"] = os.path.join(\
+             self.params_dict["processing_archive_directory"],
+             "parallel_processing_result.png")
+        self.params_dict["log_file_path"] = os.path.join(\
+             self.params_dict["processing_archive_directory"],
+             "dozor_log.log")
+        self.params_dict["group_id"] = data_collection.lims_group_id
+        self.params_dict["processing_start_time"] = time.strftime("%Y-%m-%d %H:%M:%S")
 
-
-        processing_input, processing_params = self.create_processing_input(\
-             data_collection, processing_params, grid_object) 
+        processing_input = self.create_processing_input(data_collection)
         processing_input_file = os.path.join(processing_directory, "dozor_input.xml")
         processing_input.exportToFile(processing_input_file)
 
-        if not os.path.isfile(self.processing_start_command):
-            self.processing_done_event.set()
-            msg = "ParallelProcessing: Start command %s is not executable" % self.processing_start_command
-            logging.getLogger("queue_exec").error(msg)
-            self.emit("processingFailed")
-            return       
+        self.results_raw = \
+             {"image_num" : numpy.zeros(self.params_dict["images_num"]),
+              "spots_num" : numpy.zeros(self.params_dict["images_num"]),
+              "spots_int_aver" : numpy.zeros(self.params_dict["images_num"]),
+              "spots_resolution" : numpy.zeros(self.params_dict["images_num"]),
+              "score" : numpy.zeros(self.params_dict["images_num"])}
+
+        if self.params_dict["lines_num"] > 1:
+             self.results_aligned = \
+               {"image_num" : numpy.zeros(self.params_dict["images_num"]).reshape(\
+                                          self.params_dict["steps_x"],
+                                          self.params_dict["steps_y"]),
+                "spots_num" : numpy.zeros(self.params_dict["images_num"]).reshape(\
+                                          self.params_dict["steps_x"],
+                                          self.params_dict["steps_y"]),
+                "spots_int_aver" : numpy.zeros(self.params_dict["images_num"]).reshape(\
+                                               self.params_dict["steps_x"],
+                                               self.params_dict["steps_y"]),
+                "spots_resolution" : numpy.zeros(self.params_dict["images_num"]).reshape(\
+                                                 self.params_dict["steps_x"],
+                                                 self.params_dict["steps_y"]),
+                "score" : numpy.zeros(self.params_dict["images_num"]).reshape(\
+                                      self.params_dict["steps_x"],
+                                      self.params_dict["steps_y"])}
         else:
-            msg = "ParallelProcessing: Starting processing using xml file %s" % processing_input_file
-            logging.getLogger("queue_exec").info(msg)
-            line_to_execute = self.processing_start_command + ' ' + \
-                              processing_input_file + ' ' + \
-                              processing_directory
-        subprocess.Popen(str(line_to_execute), shell = True,
-                         stdin = None, stdout = None, stderr = None,
-                         close_fds = True)
+              self.results_aligned = \
+                {"image_num" : numpy.zeros(self.params_dict["images_num"]),
+                 "spots_num" : numpy.zeros(self.params_dict["images_num"]),
+                 "spots_int_aver" : numpy.zeros(self.params_dict["images_num"]),
+                 "spots_resolution" : numpy.zeros(self.params_dict["images_num"]),
+                 "score" : numpy.zeros(self.params_dict["images_num"])}
 
-        self.do_processing_result_polling(processing_params, file_wait_timeout, grid_object)
-        
-    def do_processing_result_polling(self, processing_params, wait_timeout, grid_object):
-        """Method polls processing results. Based on the polling of edna 
-           result files. After each result file results are aligned to match 
-           the diffractometer configuration.
-           If processing succed (files appear before timeout) then a heat map 
-           is created and results are stored in ispyb.
-           If processing was executed for helical line then heat map as a 
-           line plot is generated and best positions are estimated.
-           If processing was executed for a grid then 2d plot is generated,
-           best positions are estimated and stored in ispyb. Also mesh
-           parameters and processing results as a workflow are stored in ispyb.
-        Args.     : wait_timeout (file waiting timeout is sec.)
-        Return.   : list of 10 best positions. If processing fails returns None 
-        """
-        processing_result = {"image_num" : numpy.zeros(processing_params["images_num"]),
-                        "spots_num" : numpy.zeros(processing_params["images_num"]),
-                        "spots_int_aver" : numpy.zeros(processing_params["images_num"]),
-                        "spots_resolution" : numpy.zeros(processing_params["images_num"]),
-                        "score" : numpy.zeros(processing_params["images_num"])}
+        self.emit("paralleProcessingResults",
+                  (self.results_aligned,
+                   self.params_dict,
+                   False))
 
-        processing_params["status"] = "Success"
-        failed = False
-
-        do_polling = True
-        result_file_index = 0
-        _result_place = []
-        _first_frame_timout = 5 * 60 / 10
-        _time_out = _first_frame_timout
-        _start_time = time.time()
-       
-        while _result_place == [] and time.time() - _start_time < _time_out :
-           _result_place = glob.glob(os.path.join(processing_params["directory"],"EDApplication*/"))
-           gevent.sleep(0.2)
-        if _result_place == [] : 
-           msg = "ParallelProcessing: Failed to read dozor result directory %s" % processing_params["directory"]
-           logging.error(msg)
-           processing_params["status"] = "Failed"
-           processing_params["comments"] += "Failed: " + msg
-           self.emit("processingFailed")
-           self.processing_done_event.set()
-           failed = True
-
-        while do_polling and not failed:
-            file_appeared = False
-            result_file_name = os.path.join(_result_place[0],"ResultControlDozor_Chunk_%06d.xml" % result_file_index)
-            wait_file_start = time.time()
-            logging.debug('ParallelProcessing: Waiting for Dozor result file: %s' % result_file_name)
-            while not file_appeared and time.time() - wait_file_start < wait_timeout:
-                if os.path.exists(result_file_name) and os.stat(result_file_name).st_size > 0:
-                    file_appeared = True
-                    _time_out = wait_timeout
-                    logging.debug('ParallelProcessing: Dozor file is there, size={0}'.format(os.stat(result_file_name).st_size))
-                else:
-                    os.system("ls %s > /dev/null" %_result_place[0])
-                    gevent.sleep(0.2)
-            if not file_appeared:
-                failed = True
-                msg = 'ParallelProcessing: Dozor result file ({0}) failed to appear after {1} seconds'.\
-                      format(result_file_name, wait_timeout)
-                logging.error(msg)
-                processing_params["status"] = "Failed"
-                processing_params["comments"] += "Failed: " + msg
-                self.emit("processingFailed")
-                
-            # poll while the size increasing:
-            _oldsize = -1 
-            _newsize =  0
-            while _oldsize < _newsize :
-                _oldsize = _newsize
-                _newsize = os.stat(result_file_name).st_size
-                gevent.sleep(0.1)
-                                
-            dozor_output_file = XSDataResultControlDozor.parseFile(result_file_name)
-            #this method could be improved with xml parsing
-            for dozor_image in dozor_output_file.getImageDozor():
-                image_index = dozor_image.getNumber().getValue() - 1
-                processing_result["image_num"][image_index] = image_index
-                processing_result["spots_num"][image_index] = dozor_image.getSpots_num_of().getValue()
-                processing_result["spots_int_aver"][image_index] = dozor_image.getSpots_int_aver().getValue()   
-                processing_result["spots_resolution"][image_index] = dozor_image.getSpots_resolution().getValue()
-                processing_result["score"][image_index] = dozor_image.getScore().getValue()
-                image_index += 1
-                do_polling = (dozor_image.getNumber().getValue() != processing_params["images_num"])
-
-            aligned_result = self.align_processing_results(\
-                processing_result, processing_params, grid_object)
-            self.emit("processingSetResult", (aligned_result, processing_params, False))
-            result_file_index += 1
-        """
-
-        gevent.sleep(10)
-        #This is for test...
-
-        for key in processing_result.keys():
-            processing_result[key] = numpy.linspace(0, 
-                 processing_params["images_num"], 
-                 processing_params["images_num"]).astype('uint8')
-        """
-
-        self.processing_results = self.align_processing_results(\
-             processing_result, processing_params, grid_object)
-
-        self.emit("paralleProcessingResults", (self.processing_results, processing_params, True)) 
-
-        #Processing finished. Results are aligned and 10 best positions estimated
-        processing_params["processing_programs"] = "EDNAdozor"
-        processing_params["processing_end_time"] = time.strftime("%Y-%m-%d %H:%M:%S")
-        best_positions = self.processing_results.get("best_positions", []) 
- 
-        #If lims used then and mesh then save results in ispyb
-        #Autoprocessin program
-
-        if processing_params["lines_num"] > 1:
-            logging.getLogger("HWR").info("ParallelProcessing: Saving autoprocessing program in ISPyB")
-            autoproc_program_id = self.lims_hwobj.store_autoproc_program(processing_params)             
-
-            logging.getLogger("HWR").info("ParallelProcessing: Saving processing results in ISPyB")
-            workflow_id, workflow_mesh_id, grid_info_id = \
-                 self.lims_hwobj.store_workflow(processing_params)
-            processing_params["workflow_id"] = workflow_id
-            processing_params["workflow_mesh_id"] = workflow_mesh_id
-            processing_params["grid_info_id"] = grid_info_id
-
-            self.collect_hwobj.update_lims_with_workflow(workflow_id, 
-                 processing_params["grid_snapshot_filename"])
-
-            #If best positions detected then save them in ispyb 
-            if len(best_positions) > 0:
-                logging.getLogger("HWR").info("ParallelProcessing: Saving %d best positions in ISPyB" % \
-                       len(best_positions))
-
-                motor_pos_id_list = []
-                image_id_list = []
-                for image in best_positions:
-                    # Motor position is stored
-                    motor_pos_id = self.lims_hwobj.store_centred_position(\
-                           image["cpos"], image['col'], image['row'])     
-                    # Corresponding image is stored
-                    image_id = self.collect_hwobj.store_image_in_lims_by_frame_num(\
-                         image['index'], motor_pos_id)
-                    # Image quality indicators are stored 
-                    image["image_id"] = image_id  
-                    image["auto_proc_program"] = autoproc_program_id 
-                    
-                    self.lims_hwobj.store_image_quality_indicators(image)  
-                    
-                    motor_pos_id_list.append(motor_pos_id)
-                    image_id_list.append(image_id)
-               
-                processing_params["best_position_id"] = motor_pos_id_list[0]
-                processing_params["best_image_id"] = image_id_list[0] 
-
-                logging.getLogger("HWR").info("ParallelProcessing: Updating best position in ISPyB")
-                self.lims_hwobj.store_workflow(processing_params)
+        if not self.run_as_mockup:
+            if not os.path.isfile(self.start_command):
+                msg = "ParallelProcessing: Start command %s" % \
+                      self.start_command + \
+                      "is not executable"
+                logging.getLogger("queue_exec").error(msg)
+                self.set_processing_status("Failed")
             else:
-                logging.getLogger("HWR").info("ParallelProcessing: No best positions found during the scan")
+                msg = "ParallelProcessing: Starting processing using " + \
+                      "xml file %s" % processing_input_file
+                logging.getLogger("queue_exec").info(msg)
+                line_to_execute = self.start_command + ' ' + \
+                      processing_input_file + ' ' + \
+                      processing_directory
+                self.started = True
+
+                subprocess.Popen(str(line_to_execute), shell=True, stdin=None,
+                      stdout=None, stderr=None, close_fds=True)
+        else:
+            add = 0
+            for key in self.results_raw.keys():
+                self.results_raw[key] = numpy.linspace(0,
+                   self.params_dict["images_num"],
+                   self.params_dict["images_num"]) + add
+                add += 10
+            for index in range(self.params_dict["images_num"]):
+                if not index % 100 or \
+                   index == self.params_dict["images_num"] - 1:
+                    self.align_processing_results(index-100, index)
+                    gevent.sleep(2)
+                    self.emit("paralleProcessingResults",
+                              (self.results_aligned,
+                               self.params_dict,
+                               False))
+                    logging.getLogger("HWR").debug("Frame %d done" % index)
+            
+            
+            self.align_processing_results(0, self.params_dict["images_num"]-1)
+            self.set_processing_status("Success")
+
+    def is_running(self):
+        """Returns True if processing is running"""
+
+        return not self.done_event.is_set()
+
+    def stop_processing(self):
+        """Stops processing"""
+        self.set_processing_status("Stopped")
+        subprocess.Popen(self.kill_command, shell=True, stdin=None,
+                      stdout=None, stderr=None, close_fds=True)
+
+    def batch_processed(self, batch):
+        """Method called from EDNA via xmlrpc to set results
+
+        :param batch: list of dictionaries describing processing results
+        :type batch: lis
+        """
+
+        if self.started:
+            for image in batch:
+                self.results_raw["spots_num"]\
+                     [image[0] - 1] = int(image[1])
+                self.results_raw["spots_int_aver"]\
+                     [image[0] - 1] = image[2]
+                self.results_raw["spots_resolution"]\
+                     [image[0] -1] = image[3]
+                self.results_raw["score"]\
+                     [image[0] - 1] = image[4]
+
+            self.align_processing_results(batch[0][0] - 1,
+                                          batch[-1][0] - 1)
+            self.emit("paralleProcessingResults",
+                      (self.results_aligned,
+                       self.params_dict,
+                       False))
+
+    def set_processing_status(self, status):
+        """Sets processing status and finalize the processing
+           Method called from EDNA via xmlrpc
+
+        :param status: processing status (Success, Failed)
+        :type status: str
+        """
+        self.done_event.set()
+
+        self.emit("paralleProcessingResults",
+                  (self.results_aligned,
+                   self.params_dict,
+                   False))
+        if status == "Failed":
+            self.emit("processingFailed")
+        else:
+            self.emit("processingFinished")
+
+        self.started = False
+        log = logging.getLogger("HWR")
+        self.params_dict["status"] = status
+
+        # --------------------------------------------------------------------- 
+        # 1. Assembling all file names
+        self.params_dict["processing_programs"] = "EDNAdozor"
+        self.params_dict["processing_end_time"] = \
+            time.strftime("%Y-%m-%d %H:%M:%S")
+        self.params_dict["max_dozor_score"] = \
+            self.results_aligned["score"].max()
+        best_positions = self.results_aligned.get("best_positions", [])
+
+        processing_plot_file = os.path.join(self.params_dict\
+             ["directory"], "parallel_processing_result.png")
+        processing_grid_overlay_file = os.path.join(self.params_dict\
+             ["directory"], "grid_overlay.png")
+        processing_plot_archive_file = os.path.join(self.params_dict\
+             ["processing_archive_directory"], "parallel_processing_result.png")
+        processing_csv_archive_file = os.path.join(self.params_dict\
+             ["processing_archive_directory"], "parallel_processing_result.csv")
+
+        # We store MeshScan and XrayCentring workflow in ISPyB
+        # Parallel processing is also executed for all osc that have
+        # more than 20 images, but results are not stored as workflow
+
+        fig, ax = plt.subplots(nrows=1, ncols=1)
+ 
+        if self.params_dict["lines_num"] > 1:
+            # -----------------------------------------------------------------
+            # 2. Storing results in ISPyB
+            log.info("Processing: Saving processing results in ISPyB")
+            self.lims_hwobj.store_autoproc_program(self.params_dict)
+            workflow_id, workflow_mesh_id, grid_info_id = \
+                 self.lims_hwobj.store_workflow(self.params_dict)
+            self.params_dict["workflow_id"] = workflow_id
+            self.params_dict["workflow_mesh_id"] = workflow_mesh_id
+            self.params_dict["grid_info_id"] = grid_info_id
+
+            self.collect_hwobj.update_lims_with_workflow(\
+                 workflow_id,
+                 self.params_dict["grid_snapshot_filename"])
+
+            self.lims_hwobj.store_workflow_step(self.params_dict)
+
+            #TODO Get collection id from collection object
+            self.lims_hwobj.set_image_quality_indicators_plot(\
+                 self.collect_hwobj.collection_id,
+                 processing_plot_archive_file,
+                 processing_csv_archive_file)
+
+            # --------------------------------------------------------------------- 
+            # 3. If there are frames with score, then generate map for the best one
+            if len(best_positions) > 0:
+                self.collect_hwobj.store_image_in_lims_by_frame_num(best_positions[0]["index"])
 
             try:
-                html_filename = os.path.join(processing_params["result_file_path"], "index.html")
-                logging.getLogger("HWR").info("ParallelProcessing: Generating results html %s" % html_filename)
-                simpleHtml.generate_mesh_scan_report(self.processing_results, processing_params, html_filename)
+                html_filename = os.path.join(self.params_dict["result_file_path"],
+                                             "index.html")
+                log.info("Processing: Generating results html %s" % html_filename)
+                SimpleHTML.generate_mesh_scan_report(\
+                    self.results_aligned, self.params_dict,
+                    html_filename)
             except:
-                logging.getLogger("HWR").exception("ParallelProcessing: Could not create result html %s" % html_filename)
+                log.exception("Processing: Could not create result html %s" % html_filename)
 
-        # Heat map generation
-        fig, ax = plt.subplots(nrows=1, ncols=1 )
-        if processing_params["lines_num"] > 1: 
-            #If mesh scan then a 2D plot
-            im = ax.imshow(self.processing_results["score"], 
-                           interpolation = 'none', aspect='auto',
-                           extent = [0, self.processing_results["score"].shape[1], 0, 
-                                     self.processing_results["score"].shape[0]])
+            current_max = max(fig.get_size_inches()) 
+            grid_width = self.params_dict["steps_x"] * \
+                         self.params_dict["xOffset"]
+            grid_height = self.params_dict["steps_y"] * \
+                          self.params_dict["yOffset"]
+
+            if grid_width > grid_height:
+                fig.set_size_inches(current_max,
+                                    current_max * \
+                                    grid_height / \
+                                    grid_width)
+            else:
+                fig.set_size_inches(current_max * \
+                                    grid_width / \
+                                    grid_height,
+                                    current_max)
+            # Heat map generation
+            # If mesh scan then a 2D plot
+            im = ax.imshow(numpy.transpose(self.results_aligned["score"]),
+                           interpolation='none', aspect='auto',
+                           extent=[0, self.results_aligned["score"].shape[0], 0,
+                                   self.results_aligned["score"].shape[1]])
+            im.set_cmap('hot')
+
+            try:
+                log.info("Processing: Saving heat map figure for grid overlay %s" % \
+                    processing_grid_overlay_file)
+                if not os.path.exists(os.path.dirname(processing_grid_overlay_file)):
+                    os.makedirs(os.path.dirname(processing_grid_overlay_file))
+
+                #fig.savefig(processing_grid_overlay_file, dpi=150, transparent=True)
+                
+                plt.imsave(processing_grid_overlay_file,
+                           numpy.transpose(self.results_aligned["score"]),
+                           format="png",
+                           cmap="hot")
+                self.grid.set_overlay_pixmap(processing_grid_overlay_file)
+            except:
+                log.exception("Processing: Could not save figure for ISPyB %s" % \
+                    processing_grid_overlay_file)
+            
             if len(best_positions) > 0:
-                plt.axvline(x = best_positions[0]["col"] - 0.5, linewidth=0.5)
-                plt.axhline(y = best_positions[0]["row"] - 0.5, linewidth=0.5)
+                plt.axvline(x=best_positions[0]["col"], linewidth=0.5)
+                plt.axhline(y=best_positions[0]["row"], linewidth=0.5)
 
             divider = make_axes_locatable(ax)
             cax = divider.append_axes("right", size=0.1, pad=0.05)
             cax.tick_params(axis='x', labelsize=8)
             cax.tick_params(axis='y', labelsize=8)
             plt.colorbar(im, cax=cax)
-            im.set_cmap('hot')
         else:
             #if helical line then a line plot
-            plt.plot(self.processing_results["score"])
+            plt.plot(self.results_aligned["score"],
+                     label="Total score",
+                     color="r")
+            plt.plot(self.results_aligned["spots_num"],
+                     label="Number of spots",
+                     linestyle="None",
+                     color="b",
+                     marker="o")
+            plt.plot(self.results_aligned["spots_int_aver"],
+                     label="Int aver",
+                     linestyle="None",
+                     color="g",
+                     marker="s")
+            plt.plot(self.results_aligned["spots_resolution"],
+                     linestyle="None",
+                     label="Resolution",
+                     color="m",
+                     marker="s")
+            plt.legend()
             ylim = ax.get_ylim()
             ax.set_ylim((-1, ylim[1]))
 
         ax.tick_params(axis='x', labelsize=8)
         ax.tick_params(axis='y', labelsize=8)
-        ax.set_title(processing_params["title"], fontsize=8)
+        ax.set_title(self.params_dict["title"], fontsize=8)
 
         ax.grid(True)
         ax.spines['left'].set_position(('outward', 10))
         ax.spines['bottom'].set_position(('outward', 10))
 
-        processing_plot_file = os.path.join(processing_params\
-             ["directory"], "parallel_processing_result.png")
-        processing_plot_archive_file = os.path.join(processing_params\
-             ["processing_archive_directory"], "parallel_processing_result.png")
-
         try:
-            logging.getLogger("HWR").info("ParallelProcessing: Saving heat map figure %s" % processing_plot_file)
+            log.info("Processing: Saving heat map figure %s" % \
+                processing_plot_file)
             if not os.path.exists(os.path.dirname(processing_plot_file)):
                 os.makedirs(os.path.dirname(processing_plot_file))
-            fig.savefig(processing_plot_file, dpi = 150, bbox_inches = 'tight')
+            fig.savefig(processing_plot_file, dpi=150, bbox_inches='tight')
         except:
-            logging.getLogger("HWR").exception("ParallelProcessing: Could not save figure %s" % processing_plot_file)
+            log.exception("Processing: Could not save figure %s" % \
+                processing_plot_file)
         try:
-            logging.getLogger("HWR").info("ParallelProcessing: Saving heat map figure for ISPyB %s" % processing_plot_archive_file)
+            log.info("Processing: Saving heat map figure for ISPyB %s" % \
+                processing_plot_archive_file)
             if not os.path.exists(os.path.dirname(processing_plot_archive_file)):
                 os.makedirs(os.path.dirname(processing_plot_archive_file))
-            fig.savefig(processing_plot_archive_file, dpi = 150, bbox_inches = 'tight')
+            fig.savefig(processing_plot_archive_file, dpi=150, bbox_inches='tight')
         except:
-            logging.getLogger("HWR").exception("ParallelProcessing: Could not save figure for ISPyB %s" % processing_plot_archive_file) 
+            log.exception("Processing: Could not save figure for ISPyB %s" % \
+                processing_plot_archive_file)
+
         plt.close(fig)
-        self.processing_done_event.set()
 
-    def is_running(self):
-        return not self.processing_done_event.is_set()
+        log.info("Processing: Results saved in ISPyB")
 
-    def align_processing_results(self, results_dict, processing_params, grid_object):
+        #if self.params_dict["workflow_type"] == "XrayCentering":
+        #    best_cpos = self.results_aligned["best_positions"][0]["cpos"]
+        #    self.diffractometer_hwobj.move_motors(best_cpos) 
+
+    def align_processing_results(self, start_index, end_index):
+        """Realigns all results. Each results (one dimensional numpy array)
+           is converted to 2d numpy array according to diffractometer geometry.
+           Function also extracts 10 (if they exist) best positions
         """
-        Descript. : Realigns all results. Each results (one dimensional numpy array)
-                    is converted to 2d numpy array according to diffractometer
-                    geometry.
-                    Function also extracts 10 (if they exist) best positions  
-        Args.     : resuld_dict contains 5 one dimensional numpy arrays
-        Return    : Dictionary with realigned results and best positions         
-        """
+
+        num_lines = self.params_dict["lines_num"]
         #Each result array is realigned
-        aligned_results = {}
-        for result_array_key in results_dict.iterkeys():
-            aligned_results[result_array_key] = self.align_result_array(\
-              results_dict[result_array_key], processing_params, grid_object)
-        if processing_params['lines_num'] > 1:
-            grid_object.set_score(results_dict['score'])       
+        for score_key in self.results_raw.keys():
+            if num_lines > 1: 
+                for cell_index in range(start_index, end_index + 1):
+                    col, row = self.grid.get_col_row_from_image_serial(\
+                         cell_index + self.params_dict["first_image_num"])
+                    if (col < self.results_aligned[score_key].shape[0] and
+                        row < self.results_aligned[score_key].shape[1]):
+                        self.results_aligned[score_key][col][row] = self.results_raw[score_key][cell_index]
+            else:
+                self.results_aligned[score_key] = self.results_raw[score_key]  
+
+        if num_lines > 1:
+            self.grid.set_score(self.results_raw['score'])
 
         #Best positions are extracted
         best_positions_list = []
-        index_arr = (-results_dict["score"]).argsort()[:10]
+
+        index_arr = (-self.results_raw["score"]).argsort()[:10]
         if len(index_arr) > 0:
-           for index in index_arr:
-               if results_dict["score"][index] > 0:
-                   best_position = {}
-                   best_position["index"] = index
-                   best_position["index_serial"] = processing_params["first_image_num"] + index
-                   best_position["score"] = float(results_dict["score"][index])
-                   best_position["spots_num"] = int(results_dict["spots_num"][index])
-                   best_position["spots_int_aver"] = float(results_dict["spots_int_aver"][index])
-                   best_position["spots_resolution"] = float(results_dict["spots_resolution"][index])
-                   best_position["filename"] = os.path.basename(processing_params["template"] % \
-                        (processing_params["run_number"], processing_params["first_image_num"] + index))
+            for index in index_arr:
+                if self.results_raw["score"][index] > 0:
+                    best_position = {}
+                    best_position["index"] = index
+                    best_position["index_serial"] = self.params_dict["first_image_num"] + index
+                    best_position["score"] = float(self.results_raw["score"][index])
+                    best_position["spots_num"] = int(self.results_raw["spots_num"][index])
+                    best_position["spots_int_aver"] = float(self.results_raw["spots_int_aver"][index])
+                    best_position["spots_resolution"] = float(self.results_raw["spots_resolution"][index])
+                    best_position["filename"] = os.path.basename(\
+                        self.params_dict["template"] % \
+                        (self.params_dict["run_number"],
+                         self.params_dict["first_image_num"] + index))
 
-                   cpos = None
-                   if processing_params["lines_num"] > 1: 
-                       col, row = grid_object.get_col_row_from_image_serial(\
-                            index + processing_params["first_image_num"])  
-                       cpos = grid_object.get_motor_pos_from_col_row(\
-                            col, row, as_cpos = True)
-                       #entred_position = processing_params["associated_grid"].get_motor_pos_from_col_row(col, row)
-                   else:
-                       col = index
-                       row = 0
-                       #cpos = processing_params["associated_data_collection"].get_motor_pos(index, as_cpos=True)
-                       cpos = None
-                       #TODO Add best position for helical line
-                   best_position["col"] = col + 1
-                   best_position["row"] = processing_params["steps_y"] - row
-                   best_position['cpos'] = cpos
-                   best_positions_list.append(best_position) 
-        aligned_results["best_positions"] = best_positions_list
-        return aligned_results
+                    cpos = None
+                    if num_lines > 1:
+                        col, row = self.grid.get_col_row_from_image_serial(\
+                             index + self.params_dict["first_image_num"])
+                        col += 0.5
+                        row = self.params_dict["steps_y"] - row - 0.5
+                        cpos = self.grid.get_motor_pos_from_col_row(col, row)
+                    else:
+                        col = index
+                        row = 0
+                        #TODO make this nicer
+                        num_images = self.data_collection.acquisitions[0].acquisition_parameters.num_images - 1
+                        (point_one, point_two) = self.data_collection.get_centred_positions()
+                        cpos = self.diffractometer_hwobj.get_point_from_line(point_one, point_two, index, num_images)
+                    best_position["col"] = col
+                    best_position["row"] = row
+                    best_position['cpos'] = cpos
+                    best_positions_list.append(best_position)
 
-    def align_result_array(self, result_array, processing_params, grid_object):
-        """
-        Descript. : realigns result array based on the grid
-                    Result array is numpy 2d array
-        """
-        num_lines = processing_params["lines_num"]
-        if num_lines == 1:
-            return result_array
+        self.results_aligned["best_positions"] = best_positions_list
 
-        num_images_per_line = processing_params["images_per_line"]
-        num_colls = processing_params["steps_x"]
-        num_rows = processing_params["steps_y"]
-        first_image_number = processing_params["first_image_num"]
+    def extract_sweeps(self):
+        """Extracts sweeps from processing results"""
 
-        aligned_result_array = numpy.zeros(num_lines * num_images_per_line).\
-                        reshape(num_colls, num_rows)        
-
-        for cell_index in range(aligned_result_array.size):
-           
-            col, row = grid_object.get_col_row_from_image_serial(\
-                cell_index + first_image_number)
-            if (col < aligned_result_array.shape[0] and 
-                row < aligned_result_array.shape[1]):
-                aligned_result_array[col][row] = result_array[cell_index]
-        return numpy.transpose(aligned_result_array)
-
-    def get_last_processing_results(self):
-        return self.processing_results 
+        #self.results_aligned
+        logging.getLogger("HWR").info("ParallelProcessing: Extracting sweeps")
+        for col in range(self.results_aligned["score"].shape[1]):
+            mask = self.results_aligned['score'][:, col] > 0
+            label_im, nb_labels = ndimage.label(mask)
+            #sizes = ndimage.sum(mask, label_im, range(nb_labels + 1))
+            labels = numpy.unique(label_im)
+            label_im = numpy.searchsorted(labels, label_im)

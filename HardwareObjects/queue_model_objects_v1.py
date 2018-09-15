@@ -8,6 +8,11 @@ import os
 import logging
 import queue_model_enumerables_v1 as queue_model_enumerables
 
+try:
+    from collections import OrderedDict
+except ImportError:
+    from ordereddict import OrderedDict
+
 class TaskNode(object):
     """
     Objects that inherit TaskNode can be added to and handled by
@@ -21,6 +26,7 @@ class TaskNode(object):
         self._name = str()
         self._number = 0
         self._executed = False
+        self._running = False
         self._parent = None
         self._names = {}
         self._enabled = True
@@ -161,6 +167,13 @@ class TaskNode(object):
     def set_executed(self, executed):
         self._executed = executed
 
+    def is_running(self):
+        # IK maybe replace is_executed and is_running with state?
+        return self._running
+
+    def set_running(self, running):
+        self._running = running
+
     def requires_centring(self):
         return self._requires_centring
 
@@ -189,6 +202,18 @@ class TaskNode(object):
 
         return s
 
+    def get_sample_node(self):
+        """get Sample task node that this entry is executed on"""
+
+        result = self
+        while result is not None and not isinstance(result, Sample):
+            result = result._parent
+        #
+        return result
+
+    def set_snapshot(self, snapshot):
+        pass
+
 
 class RootNode(TaskNode):
     def __init__(self):
@@ -202,6 +227,11 @@ class TaskGroup(TaskNode):
         TaskNode.__init__(self)
         self.lims_group_id = None
         self.interleave_num_images = None
+        self.inverse_beam_num_images = None
+
+    def set_name_from_task(self, task):
+        if isinstance(task, DataCollection):
+            self._name = "Standard"
 
 class Sample(TaskNode):
     def __init__(self):
@@ -216,6 +246,7 @@ class Sample(TaskNode):
         self.lims_container_location = -1
         self.free_pin_mode = False
         self.loc_str = str()
+        self.diffraction_plan = None
 
         # A pair <basket_number, sample_number>
         self.location = (None, None)
@@ -256,28 +287,24 @@ class Sample(TaskNode):
         acronym = self.crystals[0].protein_acronym
 
         if self.name is not '' and acronym is not '':
-            return acronym + '-' + name
+            display_name = acronym + '-' + name
         else:
-            return ''
+            display_name = self.get_name()
+
+        if self.lims_code:
+            display_name += " (%s)" % self.lims_code            
+
+        return display_name
 
     def init_from_sc_sample(self, sc_sample):
-        self.loc_str = ":".join(map(str,sc_sample[-1]))
-        self.location = sc_sample[-1]
+        #self.loc_str = ":".join(map(str,sc_sample[-1]))
+        #self.location = sc_sample[-1]
+        self.loc_str = str(sc_sample[1]) + ':' + str(sc_sample[2])
+        self.location = (sc_sample[1], sc_sample[2])
+
         self.set_name(self.loc_str)
         #  if sc_sample[3] != "":
         #    self.set_name(sc_sample[3])
-
-
-    def init_from_plate_sample(self, plate_sample):
-        """
-        location : col, row, index
-        """
-        self.loc_str = "%s:%s:%s" %(chr(65 + int(plate_sample[1])),
-                                    str(plate_sample[2]),
-                                    str(plate_sample[3]))
-        self.location = (int(plate_sample[1]), int(plate_sample[2]), int(plate_sample[3]))
-        self.location_plate = plate_sample[5]
-        self.set_name(self.loc_str)
 
     def init_from_lims_object(self, lims_sample):
         if hasattr(lims_sample, 'cellA'):
@@ -346,6 +373,9 @@ class Sample(TaskNode):
                 self.loc_str = str(str(self.lims_location[0]) +\
                                    ':' + str(self.lims_location[1]))
 
+        if hasattr(lims_sample, 'diffractionPlan'):
+            self.diffraction_plan = lims_sample.diffractionPlan
+
         name = ''
 
         if self.crystals[0].protein_acronym:
@@ -389,6 +419,9 @@ class Sample(TaskNode):
         processing_params.protein_acronym = self.crystals[0].protein_acronym
 
         return processing_params
+
+    def get_snapshot_filename(self, prefix):
+        return prefix 
 
 
 class Basket(TaskNode):
@@ -489,6 +522,11 @@ class DataCollection(TaskNode):
         self.html_report = str()
         self.id = int()
         self.lims_group_id = None
+        self.run_processing_after = None
+        self.run_processing_parallel = None
+        self.grid = None
+        self.parallel_processing_result = None        
+        self.processing_msg_list = []]
         self.center_before_collect = False
 
     def as_dict(self):
@@ -497,7 +535,7 @@ class DataCollection(TaskNode):
         path_template = acq.path_template
         parameters = acq.acquisition_parameters
 
-        return {'prefix': acq.path_template.get_prefix(),
+        return {'prefix': path_template.get_prefix(),
                 'run_number': path_template.run_number,
                 'first_image': parameters.first_image,
                 'num_images': parameters.num_images,
@@ -523,14 +561,18 @@ class DataCollection(TaskNode):
 
     def set_experiment_type(self, exp_type):
         self.experiment_type = exp_type
-        if self.experiment_type == queue_model_enumerables.EXPERIMENT_TYPE.MESH:
-            self.set_requires_centring(False)
 
     def is_helical(self):
-        return self.experiment_type == queue_model_enumerables.EXPERIMENT_TYPE.HELICAL
+        return self.experiment_type == \
+            queue_model_enumerables.EXPERIMENT_TYPE.HELICAL
+
+    def is_mesh(self):
+        return self.experiment_type == \
+            queue_model_enumerables.EXPERIMENT_TYPE.MESH
 
     def get_name(self):
-        return '%s_%i' % (self._name, self._number)
+        return '%s_%i' % (self.acquisitions[0].path_template.get_prefix(),
+                          self.acquisitions[0].path_template.run_number)
 
     def is_collected(self):
         return self.is_executed()
@@ -574,9 +616,9 @@ class DataCollection(TaskNode):
                              centred_position.snapshot_image
 
             if snapshot_image:
-                snapshot_image_copy = snapshot_image.copy()
+                #snapshot_image_copy = snapshot_image.copy()
                 acq_parameters = new_node.acquisitions[0].acquisition_parameters
-                acq_parameters.centred_position.snapshot_image = snapshot_image_copy
+                acq_parameters.centred_position.snapshot_image = None
 
         return new_node
 
@@ -612,23 +654,30 @@ class DataCollection(TaskNode):
         Args.     :
         Return    : display_name (string)
         """
-        if self.experiment_type == queue_model_enumerables.EXPERIMENT_TYPE.HELICAL:
+        if self.is_helical():
             start_index, end_index = self.get_helical_point_index()
             if not None in (start_index, end_index):
-                display_name = "%s (Line - %d:%d)" %(self.get_name(), start_index, end_index)
+                display_name = "%s (Line %d:%d)" %(self.get_name(), start_index, end_index)
             else:
                 display_name = self.get_name()
-        elif self.experiment_type == queue_model_enumerables.EXPERIMENT_TYPE.MESH:
-            display_name = "%s" %(self.get_name())
+        elif self.is_mesh():
+            display_name = "%s (%s)" %(self.get_name(),
+                                       self.grid.get_display_name()) 
         else:
             index = self.get_point_index()
             if index:
                 index = str(index)
             else:
                 index = "not defined"
-            display_name = "%s (Point - %s)" %(self.get_name(), index)
+            display_name = "%s (Point %s)" %(self.get_name(), index)
         return display_name
 
+    def get_parallel_processing_result(self):
+        return self.parallel_processing_result
+
+    def set_snapshot(self, snapshot):
+        self.acquisitions[0].acquisition_parameters.\
+             centred_position.snapshot_image = snapshot
 
 class ProcessingParameters():
     def __init__(self):
@@ -725,6 +774,10 @@ class Characterisation(TaskNode):
             index = "not defined"
         display_name = "%s (Point - %s)" %(self.get_name(), index)
         return display_name
+
+    def set_snapshot(self, snapshot):
+        self.reference_image_collection.acquisitions[0].\
+            acquisition_parameters.centred_position.snaphot_image = snapshot
 
 class CharacterisationParameters(object):
     def __init__(self):
@@ -869,7 +922,10 @@ class EnergyScan(TaskNode):
             index = str(index)
         else:
             index = "not defined"
-        display_name = "%s (Point - %s)" %(self.get_name(), index)
+        display_name = "%s (%s %s, Point - %s)" %(self.get_name(),
+                                                  self.element_symbol,
+                                                  self.edge,
+                                                  index)
         return display_name
 
     def copy(self):
@@ -882,6 +938,9 @@ class EnergyScan(TaskNode):
                 new_node.centred_position.snapshot_image = snapshot_image_copy
         return new_node
 
+    def set_snapshot(self, snapshot):
+        self.centred_position.snapshot_image = snapshot
+
 class EnergyScanResult(object):
     def __init__(self):
         object.__init__(self)
@@ -891,7 +950,7 @@ class EnergyScanResult(object):
         self.second_remote = None
         self.data_file_path = PathTemplate()
  
-        self.data = None
+        self.data = []
 
         self.pk = None
         self.fppPeak = None
@@ -915,6 +974,7 @@ class XRFSpectrum(TaskNode):
         self.count_time = 1
         self.set_requires_centring(True)
         self.centred_position = cpos
+        self.adjust_transmission = True
 
         if not sample:
             self.sample = Sample()
@@ -972,6 +1032,9 @@ class XRFSpectrum(TaskNode):
                 new_node.centred_position.snapshot_image = snapshot_image_copy
         return new_node
 
+    def set_snaphot(self, snapshot):
+        self.centred_position.snapshot_image = snapshot
+
 class XRFSpectrumResult(object):
     def __init__(self):
         object.__init__(self)
@@ -979,14 +1042,11 @@ class XRFSpectrumResult(object):
         self.mca_calib = None
         self.mca_config = None
 
-class Advanced(TaskNode):
-    def __init__(self, ref_data_collection=None, grid_object=None,
-                 crystal=None):
+class XrayCentering(TaskNode):
+    def __init__(self, ref_data_collection=None, crystal=None):
         TaskNode.__init__(self)
 
         self.set_requires_centring(False)
-        self.method_type = "MeshScan"
-
         if not ref_data_collection:
             ref_data_collection = DataCollection()
 
@@ -995,12 +1055,11 @@ class Advanced(TaskNode):
 
         self.reference_image_collection = ref_data_collection
         self.crystal = crystal
-        self.grid_object = grid_object
 
         self.html_report = None
 
-    def get_associated_grid(self):
-        return self.grid_object
+    def get_display_name(self):
+        return "Xray centring"
 
     def get_path_template(self):
         return self.reference_image_collection.acquisitions[0].path_template
@@ -1010,30 +1069,40 @@ class Advanced(TaskNode):
         file_locations = path_template.get_files_to_be_written()
         return file_locations
 
-    def get_display_name(self):
-        name = self.method_type
-        if self.grid_object:
-            name += " (%s)" % self.grid_object.get_display_name()
-        else:
-            name += " (Static grid)"
-        return name
-
-    def get_first_processing_results(self):
-        return self.first_processing_results
-
-class XrayCentering(Advanced):
-    def __init__(self, *args, **kwargs):
-        Advanced.__init__(self, *args, **kwargs)
-        self.method_type = "XrayCentering"
+    def add_task(self, task):
+        pass
 
 class SampleCentring(TaskNode):
-    def __init__(self, name = None, kappa = None, kappa_phi = None):
+    """Manual 3 click centering
+
+    kappa and kappa_phi settings are applied first, and assume that the
+    beamline does have axes with exactly these names
+
+    Other motor_positions are applied afterwards, but in random order.
+    motor_positions override kappa and kappa_phi if both are set
+
+    Since setting one motor can change the position of another
+    (on ESRF ID30B setting kappa and kappa_phi changes the translation motors)
+     the order is important.
+
+    """
+    def __init__(self, name=None, kappa=None, kappa_phi=None,
+                 motor_positions=None):
         TaskNode.__init__(self)
         self._tasks = []
+        self._other_motor_positions = (motor_positions.copy()
+                                       if motor_positions else {})
+        self._centring_result = None
 
         if name:
             self.set_name(name)
- 
+
+        if 'kappa' in self._other_motor_positions:
+            kappa = self._other_motor_positions.pop('kappa')
+
+        if 'kappa_phi' in self._other_motor_positions:
+            kappa_phi = self._other_motor_positions.pop('kappa_phi')
+
         self.kappa = kappa
         self.kappa_phi = kappa_phi
 
@@ -1051,6 +1120,42 @@ class SampleCentring(TaskNode):
 
     def get_kappa_phi(self):
         return self.kappa_phi
+
+    def get_other_motor_positions(self):
+        return self._other_motor_positions.copy()
+
+    def get_centring_result(self):
+        return self._centring_result
+
+    def set_centring_result(self, value):
+        if value is None or isinstance(value, CentredPosition):
+            self._centring_result = value
+        else:
+            raise TypeError(
+                "SampleCentring.centringResult must be a CentredPosition"
+                " or None, was a %s" % value.__class__.__name__
+            )
+
+class OpticalCentring(TaskNode):
+    """Optical automatic centering with lucid"""
+
+    def __init__(self, user_confirms=False):
+        TaskNode.__init__(self)
+
+        if user_confirms:
+            self.set_name("Optical automatic centring (user confirms)")
+        else:
+            self.set_name("Optical automatic centring")
+        if user_confirms:
+            self.try_count = 3
+        else:
+            self.try_count = 1
+
+    def add_task(self, task_node):
+        pass
+
+    def get_name(self):
+        return self._name
 
 class Acquisition(object):
     def __init__(self):
@@ -1097,8 +1202,31 @@ class PathTemplate(object):
         PathTemplate.archive_folder = archive_folder
 
     @staticmethod
-    def set_path_template_style(synchotron_name):
-        PathTemplate.synchotron_name = synchotron_name 
+    def set_path_template_style(synchotron_name, template=None):
+        PathTemplate.synchotron_name = synchotron_name
+        PathTemplate.template = template
+
+    @staticmethod
+    def set_precision(precision):
+        PathTemplate.precision = precision
+
+    @staticmethod
+    def interpret_path(path):
+        try:
+            dirname, fname = os.path.split(path)
+            fname, ext = os.path.splitext(fname)
+            fname_parts = fname.split("_")
+
+            # Get run number and image number from path
+            run_number, img_number = map(try_parse_int, fname_parts[-2:])
+
+            # Get the prefix and filename part
+            prefix = "_".join(fname_parts[:-2])
+            prefix_path = os.path.join(dirname, prefix)
+        except IndexError:
+            prefix_path, run_number, img_number = ["", -1, -1]
+
+        return prefix_path, run_number, img_number
 
     @staticmethod
     def interpret_path(path):
@@ -1130,9 +1258,11 @@ class PathTemplate(object):
         self.wedge_prefix = str()
         self.run_number = int()
         self.suffix = str()
-        self.precision = str()
         self.start_num = int()
         self.num_files = int()
+
+        if not hasattr(self, "precision"):
+            self.precision = str()
 
     def as_dict(self):
         return {"directory" : self.directory,
@@ -1157,7 +1287,7 @@ class PathTemplate(object):
         prefix = self.base_prefix
 
         if self.mad_prefix:
-            prefix = self.base_prefix  + '-' + self.mad_prefix
+            prefix = str(self.base_prefix)  + '-' + str(self.mad_prefix)
 
         if self.reference_image_prefix:
             prefix = self.reference_image_prefix + '-' + prefix
@@ -1168,7 +1298,7 @@ class PathTemplate(object):
         return prefix
 
     def get_image_file_name(self, suffix=None):
-        template = "%s_%s_%%" + self.precision + "d.%s"
+        template = "%s_%s_%%" + str(self.precision) + "d.%s"
 
         if suffix:
             file_name = template % (self.get_prefix(),
@@ -1281,6 +1411,7 @@ class AcquisitionParameters(object):
         self.num_images = int()
         self.osc_start = float()
         self.osc_range = float()
+        self.osc_total_range = float()
         self.overlap = float()
         self.kappa = float()
         self.kappa_phi = float()
@@ -1294,6 +1425,7 @@ class AcquisitionParameters(object):
         self.inverse_beam = False
         self.shutterless = False
         self.take_snapshots = True
+        self.take_video = False
         self.take_dark_current = True
         self.skip_existing_images = False
         self.detector_mode = str()
@@ -1302,7 +1434,7 @@ class AcquisitionParameters(object):
         self.mesh_snapshot = None
         self.comments = ""
         self.in_queue = False
-        self.in_interleave = False
+        self.in_interleave = None
 
     def set_from_dict(self, params_dict):
         for item in params_dict.items():
@@ -1311,6 +1443,36 @@ class AcquisitionParameters(object):
                     self.centred_position.set_from_dict(item[1])     
                 else:
                      setattr(self, item[0], item[1])
+
+    def as_dict(self):
+        return {"first_image": self.first_image,
+                "num_images": self.num_images,
+                "osc_start": self.osc_start,
+                "osc_range": self.osc_range,
+                "osc_total_range": self.osc_total_range,
+                "overlap": self.overlap,
+                "kappa": self.kappa,
+                "kappa_phi": self.kappa_phi,
+                "exp_time": self.exp_time,
+                "num_passes": self.num_passes,
+                "num_lines": self.num_lines,
+                "energy": self.energy,
+                #"centred_position": self.centred_position,
+                "resolution": self.resolution,
+                "transmission": self.transmission,
+                "inverse_beam": self.inverse_beam,
+                "shutterless": self.shutterless,
+                "take_snapshots": self.take_snapshots,
+                "take_video": self.take_video,
+                "take_dark_current": self.take_dark_current,
+                "skip_existing_images": self.skip_existing_images,
+                "detector_mode": self.detector_mode,
+                "induce_burn": self.induce_burn,
+                "mesh_range": self.mesh_range,
+                "mesh_snapshot": self.mesh_snapshot,
+                "comments": self.comments,
+                "in_queue": self.in_queue,
+                "in_interleave": self.in_interleave}
 
     def copy(self):
         return copy.deepcopy(self)
@@ -1355,7 +1517,7 @@ class CentredPosition(object):
         self.snapshot_image = None
         self.centring_method = True
         self.index = None
-        self.used_for_collection = 0
+        #self.used_for_collection = 0
         self.motor_pos_delta = CentredPosition.MOTOR_POS_DELTA
 
         for motor_name in CentredPosition.DIFFRACTOMETER_MOTOR_NAMES:
@@ -1370,14 +1532,15 @@ class CentredPosition(object):
                     [getattr(self, motor_name) for motor_name in CentredPosition.DIFFRACTOMETER_MOTOR_NAMES]))
 
     def set_from_dict(self, params_dict):
-        for dict_item in params_dict.iteritems():
+        for dict_item in params_dict.items():
             if hasattr(self, dict_item[0]):
                 setattr(self, dict_item[0], dict_item[1])
 
     def as_str(self):
         motor_str = ""
         for motor_name in CentredPosition.DIFFRACTOMETER_MOTOR_NAMES:
-            motor_str += "%s: %.3f " %(motor_name, abs(getattr(self, motor_name)))
+            if getattr(self, motor_name):
+                motor_str += "%s: %.3f " %(motor_name, abs(getattr(self, motor_name)))
         return motor_str
 
     def __repr__(self):
@@ -1427,6 +1590,142 @@ class Workflow(TaskNode):
     def get_path_template(self):
         return self.path_template
 
+class GphlWorkflow(TaskNode):
+    def __init__(self, workflow_hwobj):
+        TaskNode.__init__(self)
+        self.workflow_hwobj = workflow_hwobj
+        self.path_template = PathTemplate()
+        self._name = str()
+        self._type = str()
+        self._interleave_order = str()
+        self._number = 0
+        self._beam_energies = OrderedDict()
+        self._detector_resolution = None
+        self._expected_resolution = None
+        self._space_group = None
+        self._crystal_system = None
+        self._point_group = None
+        self._cell_parameters = None
+        self._snapshot_count = None
+
+        # HACK - to differentiate between characterisation and acquisition
+        # TODO remove when workflow gives relevant information
+        self.lattice_selected = False
+
+        self.set_requires_centring(False)
+
+    # Workflow name (string) - == path_template.base_prefix.
+    def get_name(self):
+        return self._name
+    def set_name(self, value):
+        self._name = value
+
+    # Workflow type (string).
+    def get_type(self):
+        return self._type
+    def set_type(self, value):
+        self._type = value
+
+    # Workflow interleave order (string).
+    # Slowest changing first, characters 'g' (Goniostat position);
+    # 's' (Scan number), 'b' (Beam wavelength), 'd' (Detector position)
+    def get_interleave_order(self):
+        return self._interleave_order
+    def set_interleave_order(self, value):
+        self._interleave_order = value
+
+    # Number of snapshots to take at start of data collection.
+    def get_snapshot_count(self):
+        return self._snapshot_count
+    def set_snapshot_count(self, value):
+        self._snapshot_count = value
+
+    # Starting run number. Unnecessary.
+    # Left in as it is modified by signal when edited.
+    def get_number(self):
+        logging.getLogger().warning(
+            "Attempt to get unused attribute GphlWorkflow.number"
+        )
+        return None
+    def set_number(self, value):
+        logging.getLogger().warning(
+            "Attempt to set unused attribute GphlWorkflow.number"
+        )
+
+    # Expected resolution (optional float).
+    def get_expected_resolution(self):
+        return self._expected_resolution
+    def set_expected_resolution(self, value):
+        self._expected_resolution = value
+
+    # Detector resolution (determines detector distance).
+    def get_detector_resolution(self):
+        return self._detector_resolution
+    def set_detector_resolution(self, value):
+        self._detector_resolution = value
+
+    # role:value beam_energy dictionary (in keV)
+    def get_beam_energies(self):
+        return self._beam_energies.copy()
+    def set_beam_energies(self, value):
+        self._beam_energies = OrderedDict(value)
+
+    # Space Group.
+    def get_space_group(self):
+        return self._space_group
+    def set_space_group(self, value):
+        self._space_group = value
+
+    # Crystal system.
+    def get_crystal_system(self):
+        return self._crystal_system
+    def set_crystal_system(self, value):
+        self._crystal_system = value
+
+    # Point Group.
+    def get_point_group(self):
+        return self._point_group
+    def set_point_group(self, value):
+        self._point_group = value
+
+    # Cell parameters - sequence of six floats (a,b,c,alpha,beta,gamma)
+    def get_cell_parameters(self):
+        return self._cell_parameters
+    def set_cell_parameters(self, value):
+        if value:
+            if len(value) == 6:
+                self._cell_parameters = tuple(float(x) for x in value)
+            else:
+                raise ValueError("cell_parameters %s does not have length six"
+                                 % value)
+        else:
+            self._cell_parameters = None
+
+    def get_path_template(self):
+        return self.path_template
+
+    def get_workflow_parameters(self):
+        result = self.workflow_hwobj.get_available_workflows().get(self.get_type())
+        if result is None:
+            raise RuntimeError("No parameters for unknown workflow %s"
+                               % repr(self.get_type()))
+        return result
+
+    # Apparently not used :
+    # # Keyword-value dictionary of workflow_options (for execution command)
+    # def get_workflow_options(self):
+    #     result = dict(self._workflow_options)
+    #     if 'prefix' in result:
+    #         result['prefix'] = self.get_path_template().base_prefix
+    #     return result
+    # def set_workflow_options(self, valueDict):
+    #     dd = self._workflow_options
+    #     dd.clear()
+    #     if valueDict:
+    #         dd.update(valueDict)
+    #         if 'prefix' in dd:
+    #             self.get_path_template().base_prefix = dd.pop('prefix')
+
 
 #
 # Collect hardware object utility function.
@@ -1435,6 +1734,7 @@ def to_collect_dict(data_collection, session, sample, centred_pos=None):
     """ return [{'comment': '',
           'helical': 0,
           'motors': {},
+          'take_video': False,
           'take_snapshots': False,
           'fileinfo': {'directory': '/data/id14eh4/inhouse/opid144/' +\
                                     '20120808/RAW_DATA',
@@ -1473,6 +1773,7 @@ def to_collect_dict(data_collection, session, sample, centred_pos=None):
     proc_params = data_collection.processing_parameters
 
     return [{'comment': '',
+             'take_video': acq_params.take_video,
              'take_snapshots': acq_params.take_snapshots,
              'fileinfo': {'directory': acquisition.path_template.directory,
                           'prefix': acquisition.path_template.get_prefix(),
@@ -1499,6 +1800,8 @@ def to_collect_dict(data_collection, session, sample, centred_pos=None):
              'transmission': acq_params.transmission,
              'energy': float(acq_params.energy),
              'oscillation_sequence': [{'exposure_time': acq_params.exp_time,
+                                       'kappaStart': acq_params.kappa,
+                                       'phiStart': acq_params.kappa_phi,
                                        'start_image_number': acq_params.first_image,
                                        'number_of_images': acq_params.num_images,
                                        'overlap': acq_params.overlap,
@@ -1570,7 +1873,7 @@ def dc_from_edna_output(edna_result, reference_image_collection,
 
             acq.path_template = beamline_setup_hwobj.get_default_path_template()
 
-            # Use the same path tempalte as the reference_collection
+            # Use the same path template as the reference_collection
             # and update the members the needs to be changed. Keeping
             # the directories of the reference collection.
             ref_pt= reference_image_collection.acquisitions[0].path_template
@@ -1754,11 +2057,16 @@ def create_interleave_sw(interleave_list, num_images, sw_size):
                 sw_first_image = collection_first_image + sw_index * sw_size
                 sw_osc_start = collection_osc_start + collection_osc_range * sw_index * sw_size
                 sw_osc_range = collection_osc_range * sw_actual_size
-                subwedges.append((collection_index, sw_index, sw_first_image, 
-                                  sw_actual_size, sw_osc_start, sw_osc_range))
+                subwedges.append({"collect_index" : collection_index,
+                                  "collect_first_image" : collection_first_image,
+                                  "collect_num_images" : collection_num_images, 
+                                  "sw_index" : sw_index,
+                                  "sw_first_image" : sw_first_image, 
+                                  "sw_actual_size": sw_actual_size,
+                                  "sw_osc_start" : sw_osc_start,
+                                  "sw_osc_range" : sw_osc_range})
         sw_first_image += sw_actual_size 
     return subwedges
-
 
 def try_parse_int(n):
     try:

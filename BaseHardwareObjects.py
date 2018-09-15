@@ -118,7 +118,7 @@ class HardwareObjectNode:
             try:
                 i = self.__objectsNames.index(objectName)
             except:
-                raise IndexError
+                raise KeyError
             else:
                 obj = self.__objects[i]
                 if len(obj) == 1:
@@ -140,7 +140,7 @@ class HardwareObjectNode:
             else:
                 raise IndexError
         else:
-            raise IndexError
+            raise TypeError
 
 
     def addReference(self, name, reference, role = None):
@@ -174,7 +174,7 @@ class HardwareObjectNode:
                 hw_object.__role = role
 
                 if objectsNamesIndex >= 0:
-                    self.__objectsNames[objectsNamesIndex] = name
+                    self.__objectsNames[objectsNamesIndex] = role
                     self.__objects[objectsIndex] = [hw_object]
                 else:
                     self.__objects[objectsIndex][objectsIndex2] = hw_object
@@ -259,11 +259,11 @@ class HardwareObjectNode:
         value = str(value)
         
         if value=='None':
-          value=None
+            value=None
         else:
           #
           # try to convert buffer to the appropriate type
-          # 
+          #
           try:
               value = int(value)
           except:
@@ -299,11 +299,18 @@ class HardwareObjectNode:
         """
         return
 
+    def clear_gevent(self):
+        pass
+
+    def print_log(self, log_type='HWR', level='debug', msg=""):
+        if hasattr(logging.getLogger(log_type), level):
+            getattr(logging.getLogger(log_type), level)(msg)
+
 class HardwareObject(HardwareObjectNode, CommandContainer):
     def __init__(self, rootName):
         HardwareObjectNode.__init__(self, rootName)
         CommandContainer.__init__(self)
- 
+        self.connect_dict = {} 
 
     def _init(self):
         #'protected' post-initialization method
@@ -370,6 +377,9 @@ class HardwareObject(HardwareObjectNode, CommandContainer):
         signal = str(signal)
             
         dispatcher.connect(slot, signal, sender)
+
+        self.connect_dict[sender] = {"signal": signal,
+                                     "slot": slot}
  
         if hasattr(sender, "connectNotify"):
             sender.connectNotify(signal)
@@ -474,6 +484,8 @@ class Device(HardwareObject):
     def isReady(self):
         return self.state == Device.READY
 
+    def is_ready(self):
+        return self.isReady()
 
     def userName(self):
         uname = self.getProperty('username')
@@ -559,6 +571,9 @@ class Equipment(HardwareObject, DeviceContainer):
 
     def isReady(self):
         return self.isValid() and self.__ready
+
+    def is_ready(self):
+        return self.isReady()
 
 
     def isValid(self):

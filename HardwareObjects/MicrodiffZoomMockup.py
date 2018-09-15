@@ -4,9 +4,8 @@ import logging
 import math
 
 class MicrodiffZoomMockup(Device):
-    #def __init__(self, name):
-    #    pass
-        #MD2Motor.__init__(self, name)
+
+    (NOTINITIALIZED, UNUSABLE, READY, MOVESTARTED, MOVING, ONLIMIT) = (0,1,2,3,4,5)
 
     def init(self):
         self.motor_name = "Zoom"
@@ -15,9 +14,26 @@ class MicrodiffZoomMockup(Device):
  
         self.predefined_position_attr = 1
 
-        self.predefinedPositions = { "Zoom 1": 1, "Zoom 2": 2, "Zoom 3": 3, "Zoom 4": 4, "Zoom 5": 5, "Zoom 6": 6, "Zoom 7": 7, "Zoom 8": 8, "Zoom 9": 9, "Zoom 10":10 }
+        self.predefinedPositions = {"Zoom 1": 1,
+                                    "Zoom 2": 2,
+                                    "Zoom 3": 3,
+                                    "Zoom 4": 4,
+                                    "Zoom 5": 5,
+                                    "Zoom 6": 6,
+                                    "Zoom 7": 7,
+                                    "Zoom 8": 8,
+                                    "Zoom 9": 9,
+                                    "Zoom 10":10}
         self.sortPredefinedPositionsList()
 
+        self.get_state = self.getState
+        self.get_predefined_positions_list = self.getPredefinedPositionsList
+        self.get_current_position_name = self.getCurrentPositionName
+        self.move_to_position = self.moveToPosition
+
+    def isReady(self):
+        return True
+ 
     def sortPredefinedPositionsList(self):
         self.predefinedPositionsNamesList = self.predefinedPositions.keys()
         self.predefinedPositionsNamesList.sort(lambda x, y: int(round(self.predefinedPositions[x] - self.predefinedPositions[y])))
@@ -39,6 +55,9 @@ class MicrodiffZoomMockup(Device):
     def getLimits(self):
         return (1,10)
 
+    def getState(self):
+        return MicrodiffZoomMockup.READY
+
     def getPredefinedPositionsList(self):
         return self.predefinedPositionsNamesList
 
@@ -55,15 +74,16 @@ class MicrodiffZoomMockup(Device):
           if math.fabs(self.predefinedPositions[positionName] - pos) <= 1E-3:
             return positionName
         return ''          
+
     def moveToPosition(self, positionName):
         valid = True
 
         try:
             self.predefined_position_attr = self.predefinedPositions[positionName]
+            self.motorPositionChanged(self.predefined_position_attr)
         except:
             valid = False
-        
-        self.connectNotify('predefinedPositionChanged')
+
         return valid
 
 

@@ -1,56 +1,48 @@
-from HardwareRepository.BaseHardwareObjects import Device
-import math
-import logging
-import time
+from AbstractMotor import AbstractMotor
 
-class MicrodiffLight(Device):      
-    (NOTINITIALIZED, UNUSABLE, READY, MOVESTARTED, MOVING, ONLIMIT) = (0,1,2,3,4,5)
+class MicrodiffLight(AbstractMotor):
 
     def __init__(self, name):
-        Device.__init__(self, name)
-        self.motor_pos_attr_suffix = "Factor"
+        AbstractMotor.__init__(self, name)
 
     def init(self): 
-        self.motorState = MicrodiffLight.READY
-        self.global_state = "STANDBY"
-        self.position_attr = self.addChannel({"type":"exporter", "name":"position" }, self.motor_name+self.motor_pos_attr_suffix)
-        self.position_attr.connectSignal("update", self.motorPositionChanged)
-        self.setIsReady(True)
+        try:
+           self.set_limits(eval(self.getProperty("limits")))
+        except:
+           self.set_limits((0, 2))
+
+        self.chan_value = self.getChannelObject("chanLightValue")
+        self.chan_value.connectSignal("update", self.value_changed)
+        self.chan_light_is_on = self.getChannelObject("chanLightIsOn")
+
+        self.set_state(self.motor_states.READY)
+        self.value_changed(self.chan_value.getValue())
 
     def connectNotify(self, signal):
-        if self.position_attr.isConnected():
+        if self.chan_value.isConnected():
             if signal == 'positionChanged':
-                self.emit('positionChanged', (self.getPosition(), ))
+                self.emit('positionChanged', (self.get_position(), ))
             elif signal == 'limitsChanged':
-                self.motorLimitsChanged()  
- 
-    def updateState(self):
-        self.setIsReady(True) #self.global_state in ("STANDBY","ALARM") and self.motorState > MicrodiffLight.UNUSABLE)
- 
-    def getState(self):
-        return self.motorState
-    
-    def motorLimitsChanged(self):
-        self.emit('limitsChanged', (self.getLimits(), ))
+                self.limits_changed()  
+
+    def limits_changed(self):
+        self.emit('limitsChanged', (self.get_limits(), ))
                      
-    def getLimits(self):
-        return (0, 2)
- 
-    def motorPositionChanged(self, absolutePosition, private={}):
-        self.emit('positionChanged', (absolutePosition, ))
+    def value_changed(self, position, private={}):
+        self.set_position(position)
+        self.emit('positionChanged', (self.get_position(), ))
 
-    def getPosition(self):
-        return self.position_attr.getValue()
-
-    def move(self, absolutePosition):
-        self.position_attr.setValue(absolutePosition)
-
-    def moveRelative(self, relativePosition):
-        self.move(self.getPosition() + relativePosition)
-
-    def getMotorMnemonic(self):
-        return self.motor_name
+    def move(self, position, wait=False, timeout=None):
+        self.chan_value.setValue(position)
 
     def stop(self):
-        pass #self._motor_abort()
+        pass
     
+    def light_is_out(self):
+        return self.chan_light_is_on.getValue()
+
+    def move_in(self):
+        self.chan_light_is_on.setValue(False)
+
+    def move_out(self):
+        self.chan_light_is_on.setValue(True)

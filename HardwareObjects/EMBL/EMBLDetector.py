@@ -5,271 +5,211 @@
 #  This file is part of MXCuBE software.
 #
 #  MXCuBE is free software: you can redistribute it and/or modify
-#  it under the terms of the GNU General Public License as published by
+#  it under the terms of the GNU Lesser General Public License as published by
 #  the Free Software Foundation, either version 3 of the License, or
 #  (at your option) any later version.
 #
 #  MXCuBE is distributed in the hope that it will be useful,
 #  but WITHOUT ANY WARRANTY; without even the implied warranty of
 #  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-#  GNU General Public License for more details.
+#  GNU Lesser General Public License for more details.
 #
-#  You should have received a copy of the GNU General Public License
+#  You should have received a copy of the GNU Lesser General Public License
 #  along with MXCuBE.  If not, see <http://www.gnu.org/licenses/>.
 
-"""
-[Name] : EMBLDetector(Equipment)
-
-[Description] : Describes generic detector 
-
-[Channels] :
-self.chan_temperature : temperature in C (float)
-self.chan_humidity : humidity in % (float)
-self.chan_status : status (string)
-self.chan_roi_mode : collection mode "0", "C18", "C2" (string)
-self.chan_frame_rate : frame rate (float)
-
-[Commands] :
-
-[Emited signals] :
-
-[Properties] : 
-self.default_distance
-self.collect_name
-self.shutter_name
-self.temp_treshold
-self.hum_treshold
-
-[Hardware Objects]      
--------------------------------------------------------------------------------
-| name                       | signals             | functions
-|------------------------------------------------------------------------------
-| self.distance_motor_hwobj  |                     | getPosition()
--------------------------------------------------------------------------------
-"""
-
-import logging 
+import gevent
+import logging
 from AbstractDetector import AbstractDetector
 from HardwareRepository.BaseHardwareObjects import HardwareObject
 
 
-__author__ = "Ivars Karpics"
-__credits__ = ["MXCuBE colaboration"]
-
-__version__ = "2.2."
-__maintainer__ = "Ivars Karpics"
-__email__ = "ivars.karpics[at]embl-hamburg.de"
-__status__ = "Draft"
+__credits__ = ["EMBL Hamburg"]
+__version__ = "2.3."
+__category__ = "General"
 
 
 class EMBLDetector(AbstractDetector, HardwareObject):
-    """
-    Descript. : Detector class. Contains all information about detector
-                the states are 'OK', and 'BAD'
-                the status is busy, exposing, ready, etc.
-                the physical property is RH for pilatus, P for rayonix
+    """Detector class. Contains all information about detector
     """
 
-    def __init__(self, name): 
-        """
-        Descript. :
-        """ 
+    def __init__(self, name):
         AbstractDetector.__init__(self)
         HardwareObject.__init__(self, name)
 
-        self.temperature = 0
-        self.humidity = 0
-        self.tolerance = 0.1
-        self.roi_mode = None
-        self.roi_modes = []
         self.collect_name = None
         self.shutter_name = None
         self.temp_treshold = None
-        self.hum_treshold = None   
-        self.exp_time_limits = None
+        self.hum_treshold = None
+        self.cover_state = None
 
         self.chan_beam_xy = None
+        self.chan_cover_state = None
         self.chan_temperature = None
         self.chan_humidity = None
         self.chan_status = None
         self.chan_roi_mode = None
         self.chan_frame_rate = None
+        self.chan_actual_frame_rate = None
+
+        self.cmd_close_cover = None
+        self.cmd_restart_daq = None
+        self.binding_mode = 1
+        self.tolerance = None
+        self.temperature = None
+        self.humidity = None
+        self.actual_frame_rate = None
 
     def init(self):
-        """
-        Descript. :
-        """
+
+        self.cover_state = 'unknown'
+
         self.distance_motor_hwobj = self.getObjectByRole("distance_motor")
 
+        self.chan_cover_state = self.getChannelObject('chanCoverState')
+        if self.chan_cover_state is not None:
+            self.chan_cover_state.connectSignal("update",
+                                                self.cover_state_changed)
         self.chan_temperature = self.getChannelObject('chanTemperature')
-        if self.chan_temperature is not None: 
-            self.chan_temperature.connectSignal('update', \
-                 self.temperature_changed)
-        else:
-            logging.getLogger().error("Detector: Temperature channel not defined")
-        
+        self.chan_temperature.connectSignal("update", self.temperature_changed)
         self.chan_humidity = self.getChannelObject('chanHumidity')
-        if self.chan_humidity is not None:
-            self.chan_humidity.connectSignal('update', self.humidity_changed)
-        else:
-            logging.getLogger().error("Detector: Humidity channel not defined")
-        
+        self.chan_humidity.connectSignal("update", self.humidity_changed)
         self.chan_status = self.getChannelObject('chanStatus')
-        if self.chan_status is not None:
-            self.chan_status.connectSignal('update', self.status_changed)
-        else:
-            logging.getLogger().error("Detector: Status channel not defined")
-    
+        self.chan_status.connectSignal('update', self.status_changed)
         self.chan_roi_mode = self.getChannelObject('chanRoiMode')
-        if self.chan_roi_mode is not None:
-            self.chan_roi_mode.connectSignal('update', self.roi_mode_changed)
-        else:
-            logging.getLogger().error("Detector: ROI mode channel not defined")
-
+        self.chan_roi_mode.connectSignal('update', self.roi_mode_changed)
         self.chan_frame_rate = self.getChannelObject('chanFrameRate')
-        if self.chan_frame_rate is not None:
-            self.chan_frame_rate.connectSignal('update', \
-                 self.frame_rate_changed)
-        else:
-            logging.getLogger().error("Detector: Frame rate channel not defined")
+        self.chan_frame_rate.connectSignal('update', self.frame_rate_changed)
+        self.frame_rate_changed(self.chan_frame_rate.getValue())
+
+        self.chan_actual_frame_rate = self.getChannelObject(
+            'chanActualFrameRate', optional=True)
+        if self.chan_actual_frame_rate is not None:
+            self.chan_actual_frame_rate.connectSignal(
+                'update', self.actual_frame_rate_changed)
 
         self.chan_beam_xy = self.getChannelObject('chanBeamXY')
+
+        self.cmd_close_cover = self.getCommandObject('cmdCloseCover')
+        self.cmd_restart_daq = self.getCommandObject('cmdRestartDaq')
 
         self.collect_name = self.getProperty("collectName")
         self.shutter_name = self.getProperty("shutterName")
         self.tolerance = self.getProperty("tolerance")
-        self.temp_treshold = self.getProperty("tempThreshold") 
+        self.temp_treshold = self.getProperty("tempThreshold")
         self.hum_treshold = self.getProperty("humidityThreshold")
- 
         self.pixel_min = self.getProperty("px_min")
         self.pixel_max = self.getProperty("px_max")
-
-        try:        
-            self.roi_modes = eval(self.getProperty("roiModes"))
-        except:
-            self.roi_modes = ()
+        self.roi_modes_list = eval(self.getProperty("roiModes"))
 
     def get_distance(self):
+        """Returns detector distance in mm"""
+        return self.distance_motor_hwobj.getPosition()
+
+    def set_distance(self, position, timeout=None):
+        """Sets detector distance
+
+        :param position: distance in mm
+        :type position: float
+        :param timeout: timeout
+        :type timeout: float
+        :return: None
         """
-        Descript. : 
-        """
-        if self.distance_motor_hwobj is not None:
-            return self.distance_motor_hwobj.getPosition()
-        else:
-            return self.default_distance
+        return self.distance_motor_hwobj.move(position, timeout)
 
     def get_distance_limits(self):
-        """
-        Descript. : 
-        """
+        """Returns detector distance limits"""
         if self.distance_motor_hwobj is not None:
             return self.distance_motor_hwobj.getLimits()
         else:
             return self.default_distance_limits
 
     def has_shutterless(self):
-        """
-        Descript. :
-        """
+        """Return True if has shutterless mode"""
         return self.getProperty("hasShutterless")
 
     def get_collect_name(self):
-        """
-        Descript. :
-        """
+        """Returns collection name"""
         return self.collect_name
 
     def get_shutter_name(self):
-        """
-        Desccript. :
-        """
+        """Returns shutter name"""
         return self.shutter_name
-        
+
     def temperature_changed(self, value):
-        """
-        Descript. :
-        """
-        if abs(self.temperature - value) > self.tolerance:
+        """Updates temperatur value"""
+        if self.temperature is None or \
+           abs(self.temperature - value) > self.tolerance:
             self.temperature = value
             self.emit('temperatureChanged', (value, value < self.temp_treshold))
             self.status_changed('dummy')
 
     def humidity_changed(self, value):
-        """
-        Descript. :
-        """
-        if abs(self.humidity - value) > self.tolerance:
+        """Update humidity value"""
+        if self.humidity is None or \
+           abs(self.humidity - value) > self.tolerance:
             self.humidity = value
-            self.emit('humidityChanged', (value,  value < self.hum_treshold))
+            self.emit('humidityChanged', (value, value < self.hum_treshold))
             self.status_changed('dummy')
-	
+
     def status_changed(self, status):
-        """
-        Descript. :
-        """
+        """Status changed event"""
         status = "uninitialized"
         if self.chan_status is not None:
             status = self.chan_status.getValue()
-        status_message = ""
+        status_message = "Detector: "
         if self.temperature > self.temp_treshold:
-            logging.getLogger().warning("Detector: Temperature %0.2f is greater than allowed %0.2f" % \
-                    (self.temperature, self.temp_treshold))
-            status_message = "Detector temperature has exceeded threshold.\n"
+            logging.getLogger('GUI').warning(
+                "Detector: Temperature %0.2f is greater than allowed %0.2f" %
+                (self.temperature, self.temp_treshold))
+            status_message = "Temperature has exceeded threshold.\n"
         if self.humidity > self.hum_treshold:
-            logging.getLogger().warning("Detector: Humidity %0.2f is greater than allowed %0.2f" % \
-                     (self.humidity, self.hum_treshold))
-            status_message = status_message + "Detector humidity has exceeded threshold.\n"
+            logging.getLogger('GUI').warning(
+                "Detector: Humidity %0.2f is greater than allowed %0.2f" %
+                (self.humidity, self.hum_treshold))
+            status_message = status_message + \
+                "Humidity has exceeded threshold.\n"
         if status == "calibrating":
             status_message = status_message + "Energy change in progress.\n"
             status_message = status_message + "Please wait...\n"
+            logging.getLogger('GUI').warning(status_message)
+        """
+        elif status == "configuring":
+            status_message = status_message + "Configuring"
         elif status != "ready":
             status_message = status_message + "Detector is not ready.\n"
-            status_message = status_message + "Cannot start a collection at the moment."
+            status_message = status_message + \
+                "Cannot start a collection at the moment."
+            logging.getLogger('GUI').warning(status_message)
+        """
         self.emit('statusChanged', (status, status_message, ))
 
     def roi_mode_changed(self, mode):
-        """
-        Descript. :
-        """
-        self.roi_mode = self.roi_modes.index(mode)
-        self.emit('detectorModeChanged', (self.roi_mode, ))
+        """ROI mode change event"""
+        self.roi_mode = self.roi_modes_list.index(mode)
+        self.emit('detectorRoiModeChanged', (self.roi_mode, ))
 
     def frame_rate_changed(self, frame_rate):
-        """
-        Descript. :
-        """
+        """Updates frame rate"""
         if frame_rate is not None:
-            self.exp_time_limits = (1 / float(frame_rate), 6000)
-        self.emit('expTimeLimitsChanged', (self.exp_time_limits, )) 
+            self.exposure_time_limits[0] = 1 / float(frame_rate)
+            self.exposure_time_limits[1] = 6000
+
+        self.emit('expTimeLimitsChanged', (self.exposure_time_limits, ))
+
+    def actual_frame_rate_changed(self, value):
+        self.actual_frame_rate = value
+        self.emit('frameRateChanged', value)
 
     def set_roi_mode(self, mode):
-        """
-        Descript. :
-        """
-        self.chan_roi_mode.setValue(self.roi_modes[mode])  
+        """Sets roi mode
 
-    def get_roi_mode(self):
+        :param mode: roi mode
+        :type mode: str
         """
-        Descript. :
-        """
-        return self.roi_mode
-
-    def get_roi_modes(self):
-        """
-        Descript. :
-        """
-        return self.roi_modes
-
-    def get_exposure_time_limits(self):
-        """
-        Descript. :
-        """
-        return self.exp_time_limits
+        self.chan_roi_mode.setValue(self.roi_modes_list[mode])
 
     def get_beam_centre(self):
-        """
-        Descrip. :
-        """
+        """Returns beam center coordinates"""
         beam_x = 0
         beam_y = 0
         if self.chan_beam_xy is not None:
@@ -278,14 +218,68 @@ class EMBLDetector(AbstractDetector, HardwareObject):
             beam_y = value[1]
         return beam_x, beam_y
 
+    def cover_state_changed(self, state):
+        """Updates guillotine state"
+
+        :param state: guillotine state (close, opened, ..)
+        :type state: str
+        """
+        if type(state) in (list, tuple):
+            state = state[1]
+
+        if state == 0:
+            self.cover_state = "closed"
+        elif state == 1:
+            self.cover_state = "opened"
+        elif state == 2:
+            self.cover_state = "closing"
+        elif state == 3:
+            self.cover_state = "opening"
+        return self.cover_state
+
+    def get_cover_state(self):
+        """Returns cover state
+
+        :return: str
+        """
+        return self.cover_state_changed(self.chan_cover_state.getValue())
+
+    def is_cover_closed(self):
+        """Returns True if cover is closed
+
+        :return: bool
+        """
+        self.get_cover_state()
+        return self.cover_state == "closed"
+
+    def close_cover(self, wait=True):
+        """Closes detector cover
+
+        :param wait: wait
+        :type wait: bool
+        :return: None
+        """
+        if self.get_cover_state() != "closed":
+            self.cmd_close_cover([0,0])
+            if wait:
+                #with gevent.Timeout(15, Exception("Timeout waiting for detector cover to close")):
+                while self.get_cover_state() != "closed":
+                   gevent.sleep(0.05)
+
+    def restart_daq(self):
+        """Restarts detector DAQ
+
+        :return: None
+        """
+        self.cmd_restart_daq(0)
+
     def update_values(self):
-        """
-        Descript. :
-        """
-        if self.roi_mode:
-            self.emit('detectorModeChanged', (self.roi_mode, )) 
+        """Reemits signals"""
+        self.emit('detectorRoiModeChanged', (self.roi_mode, ))
         temp = self.chan_temperature.getValue()
         self.emit('temperatureChanged', (temp, temp < self.temp_treshold))
         hum = self.chan_humidity.getValue()
-        self.emit('humidityChanged', (hum,  hum < self.hum_treshold))
-        self.status_changed("") 
+        self.emit('humidityChanged', (hum, hum < self.hum_treshold))
+        self.status_changed("")
+        self.emit('expTimeLimitsChanged', (self.exposure_time_limits, ))
+        self.emit('frameRateChanged', self.actual_frame_rate)

@@ -14,7 +14,10 @@ import gevent
 import socket
 import time
 import json
+import atexit
 import traceback
+
+import queue_model_objects_v1 as queue_model_objects
 
 from HardwareRepository.BaseHardwareObjects import HardwareObject
 if sys.version_info > (3, 0):
@@ -123,6 +126,12 @@ class SecureXMLRpcRequestHandler(SimpleXMLRPCRequestHandler):
 class XMLRPCServer(HardwareObject):
     def __init__(self, name):
         HardwareObject.__init__(self, name)
+
+        self.host = None
+        self.port = None
+        self.all_interfaces = None
+        self.enforceUseOfToken = None
+
         self.queue_model_hwobj = None
         self.queue_hwobj = None
         self.beamline_setup_hwobj = None
@@ -131,12 +140,16 @@ class XMLRPCServer(HardwareObject):
         self.current_entry_task = None
         self.host = None
         self.doEnforceUseOfToken = False
+
+        atexit.register(self.close)
       
     def init(self):
         """
         Method inherited from HardwareObject, called by framework-2. 
         """
 
+        
+        self.all_interfaces = self.getProperty('all_interfaces')
         # Listen on all interfaces if <all_interfaces>True</all_interfaces>
         # otherwise only on the interface corresponding to socket.gethostname()
         if hasattr(self, "all_interfaces") and self.all_interfaces.strip().lower() == "true":
@@ -145,8 +158,12 @@ class XMLRPCServer(HardwareObject):
             host = socket.gethostname()
 
         self.host = host    
+        self.port = self.getProperty('port')
 
-        if hasattr(self, "enforceUseOfToken") and self.enforceUseOfToken.strip().lower() == "true":
+        # Check if communication should be "secure". If self.doEnforceUseOfToken is set to True
+        # all incoming http requests must have the correct token in the headers.
+        self.enforceUseOfToken = self.getProperty('enforceUseOfToken')
+        if self.enforceUseOfToken:
             self.doEnforceUseOfToken = True
 
         try:
@@ -199,6 +216,11 @@ class XMLRPCServer(HardwareObject):
         self._server.register_function(self.anneal) 
         self._server.register_function(self.open_dialog) 
         self._server.register_function(self.workflow_end) 
+        self._server.register_function(self.dozor_batch_processed)
+        self._server.register_function(self.dozor_status_changed)
+        self._server.register_function(self.add_processing_message)
+        self.image_num = 0
+        self._server.register_function(self.get_image_num, "get_image_num")
         self._server.register_function(self.set_zoom_level) 
         self._server.register_function(self.get_zoom_level) 
         self._server.register_function(self.get_available_zoom_levels) 
@@ -216,13 +238,15 @@ class XMLRPCServer(HardwareObject):
                 if recurse is None:
                     recurse = True
 
-                self._register_module_functions(api.module, recurse=recurse)
+                self._register_module_functions(api.getProperty('module'), recurse=recurse)
 
         self.queue_hwobj = self.getObjectByRole("queue")
         self.queue_model_hwobj = self.getObjectByRole("queue_model")
         self.beamline_setup_hwobj = self.getObjectByRole("beamline_setup")
         self.shape_history_hwobj = self.beamline_setup_hwobj.shape_history_hwobj
         self.diffractometer_hwobj = self.beamline_setup_hwobj.diffractometer_hwobj
+        self.collect_hwobj = self.beamline_setup_hwobj.collect_hwobj
+
         self.xmlrpc_server_task = gevent.spawn(self._server.serve_forever)
         self.workflow_hwobj = self.getObjectByRole("workflow")
         self.beamcmds_hwobj = self.getObjectByRole("beamcmds")
@@ -455,8 +479,8 @@ class XMLRPCServer(HardwareObject):
             else:
                 self.diffractometer_hwobj.getObjectByRole("camera").takeSnapshot(imgpath)
         except Exception as ex:
-          logging.getLogger('HWR').exception("Could not take snapshot %s " % str(ex))
-          res = False
+            logging.getLogger('HWR').exception("Could not take snapshot %s " % str(ex))
+            res = False
 
         return res
 
@@ -499,6 +523,7 @@ class XMLRPCServer(HardwareObject):
         return_map = {}
         if self.workflow_hwobj is not None:
             return_map = self.workflow_hwobj.open_dialog(dict_dialog)
+        self.emit("open_dialog", dict_dialog)
         return return_map
 
     def workflow_end(self):
@@ -508,6 +533,25 @@ class XMLRPCServer(HardwareObject):
         if self.workflow_hwobj is not None:
             self.workflow_hwobj.workflow_end()
     
+    def dozor_batch_processed(self, dozor_batch_dict):
+        self.beamline_setup_hwobj.parallel_processing_hwobj.batch_processed(dozor_batch_dict)
+
+    def dozor_status_changed(self, status):
+        self.beamline_setup_hwobj.parallel_processing_hwobj.\
+            set_processing_status(status)
+
+    def add_processing_message(self, collection_id, msg):
+        for queue_entry in self.queue_model_hwobj.get_all_dc_queue_entries():
+            if queue_entry.get_data_model().id == collection_id:
+                queue_entry.get_data_model().processing_msg_list.append(\
+                   "%s: %s" % (str(time.strftime("%Y-%m-%d %H:%M:%S")), msg))
+
+    def image_taken(self, image_num):
+        self.image_num = image_num
+
+    def get_image_num(self):
+        return self.image_num
+  
     def set_zoom_level(self, zoom_level):
         """
         Sets the zoom to a pre-defined level.

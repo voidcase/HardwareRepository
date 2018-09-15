@@ -1,22 +1,14 @@
 import time
 import logging
-import types
 import Queue
 import weakref
 import gevent
 
-from HardwareRepository import HardwareRepository
 from HardwareRepository.CommandContainer import CommandObject, ChannelObject
 import atexit
 
+import tine
 
-try:
-    import _tine as tine
-except ImportError: 
-    logging.getLogger('HWR').error("TINE support is not available.")
-else:
-    pass
-                    
 
 class TineCommand(CommandObject):
     def __init__(self, name, command_name, tinename = None, username = None, ListArgs=None, timeout=1000, **kwargs):
@@ -27,16 +19,21 @@ class TineCommand(CommandObject):
 	
     def __call__(self, *args, **kwargs):
         self.emit('commandBeginWaitReply', (str(self.name()), ))
-        if ( len(args) == 0):
+        if (len(args) == 0):
            commandArgument = []     
         else:
 	   commandArgument = args[0]
-	try :
+	try:
 	   ret = tine.set(self.tineName, self.commandName, commandArgument, self.timeout) 
 	   self.emit('commandReplyArrived', (ret, str(self.name())))
 	except IOError as strerror:
-           logging.getLogger("HWR").error("%s" %strerror)
-           self.emit('commandFailed', ("hallo", self.name()))
+           logging.getLogger("user_level_log").exception("TINE: %s" % strerror)
+           self.emit('commandFailed', (strerror))
+           raise strerror
+        except Exception as ex:
+           logging.getLogger("user_level_log").exception("TINE: error: %s" % str(ex))
+           self.emit('commandFailed', (str(ex)))
+           raise ex
 
     def get(self):
         result = None
@@ -85,7 +82,7 @@ class TineChannel(ChannelObject):
     #updates_emitter = QtCore.QTimer()
     #QtCore.QObject.connect(updates_emitter, QtCore.SIGNAL('timeout()'), emitTineChannelUpdates)
     #updates_emitter.start(20)
-    updates_emitter = gevent.spawn(do_tine_channel_update, 0.2)
+    updates_emitter = gevent.spawn(do_tine_channel_update, 0.1)
 
     def __init__(self, name, attribute_name, tinename = None, username = None, timeout=1000, **kwargs):
         ChannelObject.__init__(self, name, username, **kwargs)
@@ -102,11 +99,10 @@ class TineChannel(ChannelObject):
         if kwargs.get('size'):
             self.linkid = TineChannel.attach[kwargs.get("attach", "timer")](\
                  self.tineName, self.attributeName, self.tineEventCallback,
-                 tine.UNASSIGNED_CALLBACKID, self.timeout, int(kwargs['size']))
+                 self.timeout, int(kwargs['size']))
         else:
             self.linkid = TineChannel.attach[kwargs.get("attach", "timer")](\
-                 self.tineName, self.attributeName, self.tineEventCallback,
-                 tine.UNASSIGNED_CALLBACKID, self.timeout)
+                 self.tineName, self.attributeName, self.tineEventCallback, self.timeout)
         #except IOError as strerror:
         #   logging.getLogger("HWR").error("%s" %strerror)
         #except ValueError:
@@ -119,6 +115,9 @@ class TineChannel(ChannelObject):
             except AttributeError:
                 if tolerance != 0.0:
                     tine.tolerance(self.linkid, float (tolerance), 0.0)
+
+        # TODO Remove this sleep. Tine lib bug when after attach directly get is called
+        # time.sleep(0.02)
 
         atexit.register(self.__del__)
 
@@ -136,23 +135,33 @@ class TineChannel(ChannelObject):
         if cc == 0:
 	    self.callback_fail_counter = 0
             self.update(data_list)
-        else:
+        elif str(cc) != 103 and self.attributeName != "dozor-pass":
             self.callback_fail_counter = self.callback_fail_counter + 1
             logging.getLogger("HWR").error("Tine event callback error %s, Channel: %s, Server: %s/%s" %(str(cc),self.name(),self.tineName,self.attributeName))
 	    if self.callback_fail_counter >= 3:
 	       logging.getLogger("HWR").error("Repeated tine event callback errors %s, Channel: %s, Server: %s/%s" %(str(cc),self.name(),self.tineName,self.attributeName))
           
     def update(self, value = None):
+ 
+        #if self.tineName.split("/")[2] == 'ics':
+        #   print self.attributeName, value, self.value, self.oldvalue
+
         if value is None:
             value = self.getValue()
         self.value = value
-	if value != self.oldvalue:
+
+ 	if value != self.oldvalue:
             TineChannel.updates.put((weakref.ref(self), value))
             self.oldvalue = value
 
     def getValue(self):
+        #logging.getLogger("HWR").debug('TINE channel %s, %s get at val=%s'%(self.tineName,self.attributeName,self.value))
+        #if self.tineName == "/P14/BCUIntensity/Device0":
+        #   print self.attributeName, self.value           
+
         if self.value is None:
             try:
+               time.sleep(0.02)
                self.value = tine.get(self.tineName, self.attributeName, self.timeout)
             except IOError as strerror:
                logging.getLogger("HWR").error("%s" %strerror)
@@ -166,11 +175,7 @@ class TineChannel(ChannelObject):
            logging.getLogger("HWR").error("%s" %strerror)
 
     def isConnected(self):
-        # TO DO : implement this properly
-        if self.linkid > 0:
-            return True 
-        else:
-            return False
+        return self.linkid > 0
 
     def setOldValue(self, oldValue):
         self.oldvalue = oldValue

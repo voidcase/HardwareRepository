@@ -1,28 +1,31 @@
 import time
+from ConvertUtils import h_over_e
 
 from HardwareRepository.BaseHardwareObjects import Equipment
 
+h_over_e = 12.3984
 
 class EnergyMockup(Equipment):
    def init(self):
        self.energy_motor = None
        self.tunable = True
        self.moving = False
-       self.default_en = 12
+       self.default_en = 12.0
        self.en_lims = []
-       self.energy_value = 12
-       self.wavelength_value = 12.3984/self.energy_value
+       self.energy_value = 12.0
+       self.wavelength_value = h_over_e/self.energy_value
 
        self.canMoveEnergy = self.can_move_energy
        self.move_energy = self.start_move_energy 
        self.getEnergyLimits  = self.get_energy_limits
+       self.get_wavelength_limits = self.getWavelengthLimits
        self._abort = False
 
    def update_values(self):
        self.emit("energyChanged", self.energy_value, self.wavelength_value)
 
    def abort(self):
-      self._abort = True
+       self._abort = True
 
    def can_move_energy(self):
        return self.tunable
@@ -36,7 +39,7 @@ class EnergyMockup(Equipment):
    def getCurrentWavelength(self):
        current_en = self.getCurrentEnergy()
        if current_en is not None:
-           return (12.3984/current_en)
+           return (h_over_e/current_en)
        return None
 
    def get_energy_limits(self):
@@ -46,33 +49,34 @@ class EnergyMockup(Equipment):
        lims = None
        self.en_lims = self.getEnergyLimits()
        if self.en_lims is not None:
-           lims=(12.3984/self.en_lims[1], 12.3984/self.en_lims[0])
+           lims=(h_over_e/self.en_lims[1], h_over_e/self.en_lims[0])
        return lims
 
-   def start_move_energy(self, value, wait=True):      
-      if wait:
-         self._abort = False
-         self.moving = True
-          
-         if value > self.energy_value:
-            r = range(self.energy_value, int(value) + 1)
-         elif value < self.energy_value:
-            r = range(self.energy_value, int(value) - 1, -1)
-         else:
-            r = [value]
-            
-         for x in r:
-            if self._abort:
-               self.moving = False
-               raise StopIteration("Energy change cancelled !")
+   def start_move_energy(self, value, wait=True):
+       if wait:
+           self._abort = False
+           self.moving = True
 
-            self.energy_value = x
-            self.update_values()
-            time.sleep(0.2)
-      else:
-         self.energy_value = value
-         self.update_values()
+          # rhfogh: Modified as previous allowed only integer values
+          # First move towards energy, setting to integer keV values
+           step = -1 if value < self.energy_value else 1
+           for ii in range(int(self.energy_value) +step , int(value) + step,
+                          step):
+               if self._abort:
+                   self.moving = False
+                   raise StopIteration("Energy change cancelled !")
 
-      self.moving = False
-               
-             
+               self.energy_value = ii
+               self.wavelength_value = h_over_e / ii
+               self.update_values()
+               time.sleep(0.2)
+
+       # Now set final value
+       self.energy_value = value
+       self.wavelength_value = h_over_e / value
+       self.update_values()
+
+       self.moving = False
+
+   def move_wavelength(self, value, wait=True):
+       self.start_move_energy(h_over_e / value, wait)

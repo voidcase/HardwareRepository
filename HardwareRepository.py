@@ -38,12 +38,10 @@ def addHardwareObjectsDirs(hoDirs):
     if type(hoDirs) == list:
         newHoDirs = list(filter(os.path.isdir, list(map(os.path.abspath, hoDirs))))
 
-        for newHoDir in newHoDirs:
+        for newHoDir in reversed(newHoDirs):
             if not newHoDir in sys.path:
                 sys.path.insert(0, newHoDir)
 
-default_local_ho_dir = os.environ.get('CUSTOM_HARDWARE_OBJECTS_PATH', '').split(os.path.pathsep)
-addHardwareObjectsDirs(default_local_ho_dir)
 
 def setUserFileDirectory(user_file_directory):
     BaseHardwareObjects.HardwareObjectNode.setUserFileDirectory(user_file_directory)
@@ -59,7 +57,7 @@ def setHardwareRepositoryServer(hwrserver):
 
 def HardwareRepository(hwrserver = None):
     """Return the Singleton instance of the Hardware Repository."""
-    global _instance        
+    global _instance
 
     if _instance is None:
         if _hwrserver is None:
@@ -108,7 +106,30 @@ class __HardwareRepositoryClient:
                 self.server = None
         finally:
             self.__connected = True
- 
+
+    def findInRepository(self, relative_path):
+        """Finds absolute path of a file or directory matching relativePath
+        in one of the hardwareRepository directories
+
+        Will work for any file or directory, but intended for configuration
+        files that do NOT match the standard XML file system"""
+
+        if self.server:
+            logging.getLogger('HWR').error(
+                "Cannot find file in repository - server is in use"
+            )
+            return
+        else:
+            if relative_path.startswith(os.path.sep):
+                relative_path = relative_path[1:]
+
+            for xml_files_path in self.serverAddress:
+                file_path = os.path.join(xml_files_path, relative_path)
+                if os.path.exists(file_path):
+                    return os.path.abspath(file_path)
+            #
+            return
+
 
     def require(self, mnemonicsList):
         """Download a list of Hardware Objects in one go"""
@@ -367,6 +388,10 @@ class __HardwareRepositoryClient:
         Return :
           the required Hardware Object
         """
+
+        if not objectName:
+            return None
+
         if not objectName.startswith("/"):
             objectName="/"+objectName
 
@@ -596,3 +621,65 @@ class __HardwareRepositoryClient:
                     logging.getLogger("HWR").exception("an error occured while calling timer function")
         except:
             logging.getLogger("HWR").exception("an error occured inside the timerEvent")
+
+    def reloadHardwareObjects(self):
+        """
+        Reloads all modified modules.
+        Package reimport is used to detect modified modules.
+        Hardware objects that correspond to these modules:
+        1. are disconnected from gui
+        2. imported in this module with __import__ and reimport is called
+        3. connected back to the gui channels
+        """
+        #NOTE 
+        #reimport is supported for python 2.x and not by python 3.x
+        #if needed a similar package for 3x could be used. In this case
+        #code depends on a platform: platform.python_version()[0] > 2 ...
+
+        import reimport
+
+        modified_modules = reimport.modified()
+        for hwr_obj in self.hardwareObjects:
+            for item in modified_modules:
+                if self.hardwareObjects[hwr_obj].__module__ == item:
+                    try: 
+                        connections = self.hardwareObjects[hwr_obj].connect_dict
+                        for sender in connections:
+                            self.hardwareObjects[hwr_obj].disconnect(\
+                                  sender, connections[sender]["signal"], connections[sender]["slot"])
+                        logging.getLogger("HWR").debug(\
+                           "HardwareRepository: %s disconnected from GUI" % item)
+                        self.hardwareObjects[hwr_obj].clear_gevent()
+                    except:
+                        logging.getLogger("HWR").exception(\
+                           "HardwareRepository: Unable to disconnect hwobj %s" % item)
+                        continue
+
+                    try:
+                        __import__(item, globals(), locals(), [], -1)
+                        reimport.reimport(item)
+                        logging.getLogger("HWR").debug(\
+                           "HardwareRepository: %s reloaded" % item)
+                    except:
+                        logging.getLogger("HWR").exception(\
+                           "HardwareRepository: Unable to reload module %s" % item)
+                    
+                    try:
+                        for sender in connections:
+                            self.hardwareObjects[hwr_obj].connect(\
+                               sender,
+                               connections[sender]["signal"],
+                               connections[sender]["slot"])
+                        logging.getLogger("HWR").debug(\
+                           "HardwareRepository: %s connected to GUI" % item)
+                    except:
+                        logging.getLogger("HWR").exception(\
+                           "HardwareRepository: Unable to connect hwobj %s" % item)
+                    try:
+                        self.hardwareObjects[hwr_obj].init()
+                        self.hardwareObjects[hwr_obj].update_values()
+                        logging.getLogger("HWR").debug(\
+                           "HardwareRepository: %s initialized and updated" % item)
+                    except:
+                        logging.getLogger("HWR").exception(\
+                           "HardwareRepository: Unable to initialize hwobj %s" % item)

@@ -5,113 +5,113 @@
 #  This file is part of MXCuBE software.
 #
 #  MXCuBE is free software: you can redistribute it and/or modify
-#  it under the terms of the GNU General Public License as published by
+#  it under the terms of the GNU Lesser General Public License as published by
 #  the Free Software Foundation, either version 3 of the License, or
 #  (at your option) any later version.
 #
 #  MXCuBE is distributed in the hope that it will be useful,
 #  but WITHOUT ANY WARRANTY; without even the implied warranty of
 #  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
-#  GNU General Public License for more details.
+#  GNU Lesser General Public License for more details.
 #
-#  You should have received a copy of the GNU General Public License
+#  You should have received a copy of the GNU Lesser General Public License
 #  along with MXCuBE.  If not, see <http://www.gnu.org/licenses/>.
-
-"""
-EMBLBeamstop
-"""
 
 from HardwareRepository.BaseHardwareObjects import Device
 
 
-__author__ = "Ivars Karpics"
-__credits__ = ["MXCuBE colaboration"]
-
-__version__ = "2.2."
-__maintainer__ = "Ivars Karpics"
-__email__ = "ivars.karpics[at]embl-hamburg.de"
-__status__ = "Draft"
+__credits__ = ["EMBL Hamburg"]
+__version__ = "2.3."
+__category__ = "General"
 
 
 class EMBLBeamstop(Device):
-    """
-    Descrip. :
-    """
 
     def __init__(self, name):
-        """
-        Descrip. :
-        """
         Device.__init__(self, name)
 
-        self.beamstop_distance = None
-        self.default_beamstop_size = None
-        self.default_beamstop_distance = None
-        self.default_beamstop_direction = None 
+        self.distance = None
+        self.default_size = None
+        self.default_distance = None
+        self.default_direction = None
 
-        self.chan_beamstop_distance = None
+        self.chan_distance = None
+        self.chan_position = None
 
     def init(self):
-        """
-        Descrip. :
-        """
-        self.default_beamstop_size = \
-             self.getProperty("defaultBeamstopSize")
-        self.default_beamstop_distance = \
-             self.getProperty("defaultBeamstopDistance")
-        self.default_beamstop_direction = \
-             self.getProperty("defaultBeamstopDirection")
- 
-        self.chan_beamstop_distance = \
-             self.getChannelObject('BeamstopDistance')
-        if self.chan_beamstop_distance is not None:
-            self.chan_beamstop_distance.connectSignal("update", 
-               self.beamstop_distance_changed)
+        """Reads parameters from xml and adds neccessary channels"""
+        self.default_size = self.getProperty("defaultBeamstopSize")
+        self.default_distance = self.getProperty("defaultBeamstopDistance")
+        self.default_direction = self.getProperty("defaultBeamstopDirection")
+
+        if self.default_distance is None:
+            self.chan_distance = self.getChannelObject('BeamstopDistance')
+            if self.chan_distance is not None:
+                self.chan_distance.connectSignal("update",
+                                                 self.distance_changed)
+        else:
+            self.distance = float(self.default_distance)
+
+        self.chan_position = self.getChannelObject('BeamstopPosition')
 
     def isReady(self):
-        """
-        Descrip. :
+        """Returns True if device ready
         """
         return True
 
-    def beamstop_distance_changed(self, value):
-        self.beamstop_distance = value
-        self.emit('beamstopDistanceChanged', (value))
+    def distance_changed(self, value):
+        """Updates beam stop distance value
+
+        :param value: beamstop distance
+        :type value: float
+        :return: None
+        """
+        self.distance = value
+        self.emit('beamstopDistanceChanged', value)
+
+    def get_size(self):
+        """Returns default beamstop size"""
+        return self.default_size
+
+    def set_distance(self, distance):
+        """Sets beamstop distance
+
+        :param distance: beamstop distance
+        :type distance: float (mm)
+        """
+        if self.chan_distance is not None:
+            self.chan_distance.setValue(distance)
+            self.distance_changed(distance)
+
+    def get_distance(self):
+        """Returns beamstop distance in mm"""
+        distance = None
+        if self.chan_distance is not None:
+            distance = self.chan_distance.getValue()
+
+        if distance is None:
+            return self.default_distance
+        else:
+            return distance
+
+    def get_direction(self):
+        """Returns beamstop direction"""
+        return self.default_direction
+
+    def get_position(self):
+        """Returns beamstop position"""
+        return self.chan_position.getValue()
 
     def set_position(self, position):
-        if self.chan_beamstop_distance is not None:
-            self.chan_beamstop_distance.setValue(position)
-            self.beamstop_distance_changed(position)           
+        """Sets position
 
-    def moveToPosition(self, name):
-        pass
- 
-    def get_beamstop_size(self):
+        :param position: beamstop position
+        :type position: str
         """
-        Descrip. :
-        """
-        return self.default_beamstop_size
-
-    def get_beamstop_distance(self):
-        """
-        Descrip. :
-        """
-        beamstop_distance = None
-        if self.chan_beamstop_distance is not None:
-            beamstop_distance = self.chan_beamstop_distance.getValue()
-
-        if beamstop_distance is None:
-            return self.default_beamstop_distance
-        else:
-            return beamstop_distance
-
-    def get_beamstop_direction(self):
-        """
-        Descrip. :
-        """
-        return self.default_beamstop_direction
+        self.chan_position.setValue(position)
 
     def update_values(self):
-        self.beamstop_distance =  self.chan_beamstop_distance.getValue()
-        self.emit('beamstopDistanceChanged', (self.beamstop_distance))
-        
+        """Reemits available signals"""
+        if self.chan_distance is not None:
+            self.distance = self.chan_distance.getValue()
+        self.emit('beamstopDistanceChanged', self.distance)

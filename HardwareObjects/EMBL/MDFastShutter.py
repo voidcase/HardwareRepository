@@ -1,5 +1,30 @@
+#  Project: MXCuBE
+#  https://github.com/mxcube.
+#
+#  This file is part of MXCuBE software.
+#
+#  MXCuBE is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#
+#  MXCuBE is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#
+#  You should have received a copy of the GNU General Public License
+#  along with MXCuBE.  If not, see <http://www.gnu.org/licenses/>.
+
+import gevent
 import logging
 from HardwareRepository.BaseHardwareObjects import Device
+
+
+__credits__ = ["EMBL Hamburg"]
+__version__ = "2.3"
+__category__ = "General"
+
 
 class MDFastShutter(Device):
     shutterState = {
@@ -31,6 +56,7 @@ class MDFastShutter(Device):
             self.chan_shutter_state.connectSignal("update", self.shutter_state_changed)
 
     def shutter_state_changed(self, value):
+        self.state_bit = value
         if self.current_phase == "BeamLocation":
             self.state = self.states_dict.get(value, "unknown")
         else:
@@ -48,7 +74,19 @@ class MDFastShutter(Device):
 
     def openShutter(self, wait=True):
         self.chan_shutter_state.setValue(True) 
+        with gevent.Timeout(10, Exception("Timeout waiting for fast shutter open")):
+               while not self.state_bit:
+                     gevent.sleep(0.1)
+
+    def is_opened(self):
+        return self.chan_shutter_state.getValue()
 
     def closeShutter(self, wait=True):
-        self.chan_shutter_state.setValue(False)
+        self.shutter_state_changed(self.chan_shutter_state.getValue())
+
+        if self.is_opened():
+            self.chan_shutter_state.setValue(False)
+            with gevent.Timeout(10, Exception("Timeout waiting for fast shutter close")):
+                   while self.state_bit:
+                         gevent.sleep(0.1)
 
