@@ -1,0 +1,102 @@
+BeamlineSetup.py
+
+  - Data collection paramter validation, upper and lower limit
+  - PathTemplate precision, removed commented code
+  - Transmission, Energy, Resolution removed commented code
+
+
+DataAnalysis.py
+
+  - Removed commented section for EdnaProcessingThread seems to be used
+    in master
+
+  - Added method modify_strategy_option, that also seems to be used in master
+ 
+  - charactarise method, split into threaded and coroutine version, allternative
+    ceate two classes but most of the logic is the same.
+
+
+GenericVideoDevice
+
+  - Added Qt or PIL import check in imports "section" of file, with USE_QT global
+  - 
+  
+
+ISPyBClient2.py (WARNING)
+
+  - Added proxy arg for suds, removed one _ from ws names
+  - Using exeption logging from master in general
+  - Pay attention to translate, used internally in master in some places
+  - Removed prints
+  - WARNING: ISPyB names like Session, Person with capital first letter
+
+
+ISPyBRestClient.py
+
+  - Nothing to do
+
+
+ISPYBRestClientMockup.py
+
+  - Nothing to do
+
+
+MAXIV HW objets, using versions from 2.2
+
+MicroDiffZoomMockup.py
+
+  - Nothing to do
+
+MiniDiff.py
+
+  - Chi angle, using 2.2, master does not seem to use
+
+QueueModel.py
+
+  - Nothing to do
+
+SampleChangerMockup
+
+  - Nothing to do
+
+SardanaMotor
+
+  - Using Master
+
+Shapes.py
+
+  - Using 2.2
+
+
+Session.py
+
+  - Minor updates to path template handling
+
+XMLRPCServer:
+
+  - save_snapshot argument showScale default to False (as in 2.2)
+
+queue_entry.py
+
+  - Most changes to interleaed taken from master, added code that
+    disables snapshots from 2.2
+  - DataCollectionQueueEntry __getstate__ from 2.2 
+  - using handle_diffraction_plan from 2.2
+  - WARNING, energy_scan_finished replaced by post_execute
+  - energy_scan_failed raise QueueExecutionExeption
+  - Using get_sample_node instead of parent.parent
+  - XRF spectrum added extra args from master
+  - Removed lims related methods at end of file
+  - XRayCentring using code from master
+  - to_collect_dict added take_video from master
+  - CATS SC code, taken from master
+
+ResolutionMockup xml
+
+    - Using xml from master, no conflicts on ResolutionMockup HO so should be fine
+
+
+After merge:
+
+- Diffractomtere API changes, from cammel case to snake case, especially centring related methods
+- AbstractMotor, states shifted by 1 READY was 2 in 2.2 is 3 on master
