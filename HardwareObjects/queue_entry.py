@@ -436,8 +436,8 @@ class TaskGroupQueueEntry(BaseQueueEntry):
                    sample_model.lims_container_location
             if sample_model.lims_sample_location > -1:
                 group_data['actualSampleSlotInContainer'] = \
-                   sample_model.lims_sample_location 
-               
+                   sample_model.lims_sample_location
+
             try:
                 gid = self.lims_client_hwobj.\
                   _store_data_collection_group(group_data)
@@ -503,13 +503,12 @@ class TaskGroupQueueEntry(BaseQueueEntry):
         elif task_model.inverse_beam_num_images:
             method_type = "inverse beam"
 
-	# Disable snapshots and lims for subwedges
-        interleave_item["queue_entry"].enable_take_snapshots = False
-
-
         logging.getLogger("queue_exec").info("Preparing %s data collection" % method_type)
 
         for interleave_item in self.interleave_items:
+            # Disable snapshots and lims for subwedges
+            interleave_item["queue_entry"].enable_take_snapshots = False
+
             interleave_item["queue_entry"].set_enabled(False)
             interleave_item["tree_item"].set_checkable(False)
             interleave_item["data_model"].lims_group_id = \
@@ -522,9 +521,11 @@ class TaskGroupQueueEntry(BaseQueueEntry):
             param_list = queue_model_objects.to_collect_dict(
                  interleave_item["data_model"], self.session_hwobj,
                  sample, cpos if cpos!=empty_cpos else None)
-            self.collect_hwobj.prepare_interleave(interleave_item["data_model"],
-                                                  param_list)
- 
+
+            if hasattr(self.collect_hwobj, "prepare_interleave"):
+                self.collect_hwobj.prepare_interleave(interleave_item["data_model"],
+                                                      param_list)
+
         self.interleave_sw_list = queue_model_objects.create_interleave_sw(\
               self.interleave_items, ref_num_images, interleave_num_images)
 
@@ -546,8 +547,8 @@ class TaskGroupQueueEntry(BaseQueueEntry):
 
                 msg = "Executing %s collection (subwedge %d:%d, " % \
                     (method_type, (item_index + 1), len(self.interleave_sw_list))
-                msg += "from %d to %d, " % (acq_par.first_image, 
-                    acq_par.first_image + acq_par.num_images - 1) 
+                msg += "from %d to %d, " % (acq_par.first_image,
+                    acq_par.first_image + acq_par.num_images - 1)
                 msg += "osc start: %.2f, osc total range: %.2f)" % \
                     (item["sw_osc_start"], item["sw_osc_range"])
                 logging.getLogger("user_level_log").info(msg)
@@ -560,7 +561,7 @@ class TaskGroupQueueEntry(BaseQueueEntry):
                 self.interleave_items[item["collect_index"]]["queue_entry"].post_execute()
                 self.interleave_items[item["collect_index"]]["tree_item"].\
                       setText(1, "Subwedge %d:%d done" % (\
-                              item["collect_index"] + 1, 
+                              item["collect_index"] + 1,
                               item["sw_index"] + 1))
 
                 sig_data = {"current_idx": item_index,
@@ -579,6 +580,7 @@ class TaskGroupQueueEntry(BaseQueueEntry):
 
     def pre_execute(self):
         BaseQueueEntry.pre_execute(self)
+
         self.lims_client_hwobj = self.beamline_setup.lims_client_hwobj
         self.session_hwobj = self.beamline_setup.session_hwobj
         self.collect_hwobj = self.beamline_setup.collect_hwobj
@@ -610,7 +612,7 @@ class SampleQueueEntry(BaseQueueEntry):
         d = dict(self.__dict__)
         d["sample_centring_result"] = None
         return d
- 
+
     def __setstate__(self, d):
         self.__dict__.update(d)
 
@@ -618,7 +620,7 @@ class SampleQueueEntry(BaseQueueEntry):
         BaseQueueEntry.execute(self)
         log = logging.getLogger('queue_exec')
         sc_used = not self._data_model.free_pin_mode
- 
+
         # Only execute samples with collections and when sample changer is used
         if len(self.get_data_model().get_children()) != 0 and sc_used:
             if self.diffractometer_hwobj.in_plate_mode():
@@ -732,7 +734,7 @@ class SampleCentringQueueEntry(BaseQueueEntry):
         d = dict(self.__dict__)
         d["move_kappa_phi_task"] = None
         return d
- 
+
     def execute(self):
         BaseQueueEntry.execute(self)
 
@@ -839,7 +841,7 @@ class DataCollectionQueueEntry(BaseQueueEntry):
         d["session"] = self.session.name() if self.session else None
         d["lims_client_hwobj"] = self.lims_client_hwobj.name() if self.lims_client_hwobj else None
         return d
- 
+
     def __setstate__(self, d):
         self.__dict__.update(d)
 
@@ -873,7 +875,9 @@ class DataCollectionQueueEntry(BaseQueueEntry):
         self.diffractometer_hwobj = self.beamline_setup.diffractometer_hwobj
         self.shape_history = self.beamline_setup.shape_history_hwobj
         self.session = self.beamline_setup.session_hwobj
-        self.parallel_processing_hwobj = self.beamline_setup.parallel_processing_hwobj
+
+        if hasattr(self.beamline_setup, "parallel_processing_hwobj"):
+            self.parallel_processing_hwobj = self.beamline_setup.parallel_processing_hwobj
 
         qc = self.get_queue_controller()
 
