@@ -57,7 +57,7 @@ QueueModel.py
 
 SampleChangerMockup
 
-  - Nothing to do
+  - Few conflicts but changes introudced brakes sample changer in MXCuBE3
 
 SardanaMotor
 
@@ -100,3 +100,4 @@ After merge:
 
 - Diffractomtere API changes, from cammel case to snake case, especially centring related methods
 - AbstractMotor, states shifted by 1 READY was 2 in 2.2 is 3 on master
+- AbstractAperture method names and from camel case to snake case
