@@ -198,6 +198,23 @@ class Session(HardwareObject):
 
         return prefix
 
+    def get_default_subdir(self, sample_data):
+        subdir = ""
+
+        if isinstance(selfample_data, dict):
+            sample_name = sample_data.get("sampleName", "")
+            protein_acronym = sample_data.get("proteinAcronym", "")
+        else:
+            sample_name = sample_data.name
+            protein_acronym = sample_data.crystals[0].protein_acronym
+
+            if protein_acronym:
+                subdir = "%s/%s-%s/" %(protein_acronym, protein_acronym, sample_name)
+            else:
+                subdir = "%s/" % sample_name
+
+        return subdir.replace(':', '-')
+
     def get_proposal(self):
         """
         :returns: The proposal, 'local-user' if no proposal is
