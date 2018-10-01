@@ -254,7 +254,7 @@ class Cats90(SampleChanger):
                     "type": "tango",
                     "name": "_cmdChainedLoad",
                     "tangoname": self.tangoname,
-                }, "getput")
+                }, "getput2")
 
         self._cmdAbort = self.getCommandObject("_cmdAbort")
         if self._cmdAbort is None:
@@ -731,7 +731,7 @@ class Cats90(SampleChanger):
         while value in [PyTango.DevState.ALARM, PyTango.DevState.ON]:
             time.sleep(0.1)
             trials += 1
-            logging.getLogger("HWR").warning("SAMPLE CHANGER could be in transient state. trying again")
+            #logging.getLogger("HWR").warning("SAMPLE CHANGER could be in transient state. trying again")
             value = self._chnState.getValue()
             if trials > 4:
                break
@@ -866,7 +866,7 @@ class Cats90(SampleChanger):
         while  _state in [PyTango.DevState.ALARM, PyTango.DevState.ON]:
             time.sleep(0.1)
             trials += 1
-            logging.getLogger("HWR").warning("SAMPLE CHANGER could be in transient state. trying again")
+            #logging.getLogger("HWR").warning("SAMPLE CHANGER could be in transient state. trying again")
             _state = self._chnState.getValue()
             if trials > 2:
                break
