@@ -384,9 +384,9 @@ class BIOMAXMD3(GenericDiffractometer):
         logging.getLogger("HWR").info("[BIOMAXMD3] MD3 helical oscillation requested, waiting device ready..., params "+str(scan_params))
         scan = self.command_dict["startScan4DEx"]
         time.sleep(0.1)	
-        self.wait_device_ready(exptime+30)
         logging.getLogger("HWR").info("[BIOMAXMD3] MD3 helical oscillation requested, device ready.")
         scan(scan_params)
+        self.wait_device_ready(exptime+30)
         if wait:
             self.wait_device_ready(900)  # timeout of 5 min
 
@@ -437,7 +437,7 @@ class BIOMAXMD3(GenericDiffractometer):
         raster(raster_params)
         logging.getLogger("HWR").info("[BIOMAXMD3] MD3 raster oscillation launched, waiting for device ready.")
         time.sleep(0.1)
-        self.wait_device_ready(exptime+30)  # timeout of 5 min
+        self.wait_device_ready(exptime*nlines+30)
         logging.getLogger("HWR").info("[BIOMAXMD3] MD3 finish raster scan, device ready.")
 
     def keep_position_after_phase_change(self, new_phase):
