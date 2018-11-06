@@ -415,6 +415,7 @@ class BIOMAXCollect(AbstractCollect, HardwareObject):
                 osc_end = osc_start + osc_range * nframes_per_trigger
                 self.display_task = gevent.spawn(self._update_image_to_display)
                 self.progress_task = gevent.spawn(self._update_task_progress)
+                self.timed_snapshot_task = gevent.spawn(self.take_timed_snapshots)
                 self.oscillation_task = self.oscil(osc_start, osc_end, shutterless_exptime, 1, wait=True)
             try:
                 self.detector_hwobj.stop_acquisition()
@@ -473,7 +474,6 @@ class BIOMAXCollect(AbstractCollect, HardwareObject):
         else:
             self.diffractometer_hwobj.osc_scan(start, end, exptime, wait=True)
 
-
     def _update_task_progress(self):
         logging.getLogger("HWR").info("[BIOMAXCOLLECT] update task progress launched")
         num_images = self.current_dc_parameters['oscillation_sequence'][0]['number_of_images']
@@ -499,6 +499,55 @@ class BIOMAXCollect(AbstractCollect, HardwareObject):
             logging.getLogger("HWR").info("[BIOMAXCOLLECT] collectImageTaken %s (%s, %s, %s)" %(current_frame, num_images, step_size, step_count))
             self.emit("collectImageTaken", current_frame / self.current_dc_parameters['oscillation_sequence'][0]['number_of_images'])
             step_count += 1
+
+    def take_timed_snapshots(self):
+
+        logging.getLogger("HWR").info("[BIOMAXCOLLECT] [TSS] take timed snapshots launched")
+        logging.getLogger("HWR").debug("[BIOMAXCOLLECT] [TSS] current_dc_parameters: %s" % self.current_dc_parameters)
+
+        # ensure the existence of image directory
+        img_dir = os.path.join(self.current_dc_parameters["fileinfo"]["directory"], "timed_snapshots")
+        if not os.path.exists(img_dir):
+            try:
+                self.create_directories(img_dir)
+            except:
+                logging.getLogger("HWR").exception("Collection: Error creating timed snapshot directory")
+
+        # find number of images
+        num_images = self.current_dc_parameters['oscillation_sequence'][0]['number_of_images']
+        if self.current_dc_parameters.get('experiment_type') == 'Mesh':
+            shape_id = self.get_current_shape_id()
+            shape = self.shape_history_hwobj.get_shape(shape_id).as_dict()
+            num_cols = shape.get('num_cols')
+            num_rows = shape.get('num_rows')
+            num_images = num_cols * num_rows
+
+        # find end timestamp
+        exp_time = self.current_dc_parameters['oscillation_sequence'][0]['exposure_time']
+        start_time = time.time()
+        duration = num_images * exp_time  # + some inbetweeny time?
+        end_time = start_time + duration
+
+        # take as many images as we can and timestamp them
+        now = start_time
+        logging.getLogger("HWR").debug("[BIOMAXCOLLECT] [TSS] starting loop")
+        num_imgs = 0
+        while now < end_time:
+            shot_filename = os.path.join(
+                img_dir,
+                "%s_%s_%s.timesnapshot.jpeg" % (
+                    self.current_dc_parameters["fileinfo"]["prefix"],
+                    self.current_dc_parameters["fileinfo"]["run_number"],
+                    now
+                    )
+                )
+            self._take_crystal_snapshot(shot_filename)
+            t = time.time()
+            num_imgs += 1
+        logging.getLogger("HWR").debug("[BIOMAXCOLLECT] [TSS] finished taking %d timed snapshots" % num_imgs)
+
+
+
 
     def emit_collection_failed(self):
         """
